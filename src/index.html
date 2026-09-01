@@ -7,28 +7,45 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header>
-      <h1>vCenter Inventory</h1>
-      <nav id="sheet-nav">
-        <button class="sheet-tab active" data-sheet="vInfo">vInfo</button>
-      </nav>
-      <div class="header-actions">
-        <input id="filter" type="search" placeholder="Filter rows…" autocomplete="off" />
-        <button id="refresh">Refresh</button>
-        <button id="open-settings">Settings</button>
-      </div>
-    </header>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <span class="brand-text">
+            <strong>vCenter Inventory</strong>
+            <small>VCF Operations</small>
+          </span>
+        </div>
+        <p class="nav-heading">Inventory</p>
+        <nav id="sheet-nav" class="nav"></nav>
+        <div class="sidebar-footer">
+          <button id="export" class="primary">Export XLSX</button>
+          <button id="open-settings" class="ghost">Settings</button>
+        </div>
+      </aside>
 
-    <main>
-      <p id="status" class="status"></p>
-      <div id="warnings" class="warnings" hidden></div>
-      <div id="table-wrap" class="table-wrap">
-        <table id="table">
-          <thead><tr id="head-row"></tr></thead>
-          <tbody id="body"></tbody>
-        </table>
-      </div>
-    </main>
+      <main class="content">
+        <header class="topbar">
+          <div class="titles">
+            <h1 id="sheet-title">vInfo</h1>
+            <p id="status" class="status"></p>
+          </div>
+          <div class="actions">
+            <input id="filter" type="search" placeholder="Filter rows…" autocomplete="off" />
+            <button id="refresh" class="primary">Refresh</button>
+          </div>
+        </header>
+
+        <div id="warnings" class="warnings" hidden></div>
+
+        <div class="table-wrap">
+          <table id="table">
+            <thead><tr id="head-row"></tr></thead>
+            <tbody id="body"></tbody>
+          </table>
+        </div>
+      </main>
+    </div>
 
     <dialog id="settings">
       <form method="dialog">
@@ -39,9 +56,9 @@
         </p>
         <div id="connections"></div>
         <div class="dialog-actions">
-          <button id="add-connection" type="button">Add vCenter</button>
+          <button id="add-connection" type="button" class="ghost">Add vCenter</button>
           <span class="spacer"></span>
-          <button value="cancel">Cancel</button>
+          <button value="cancel" class="ghost">Cancel</button>
           <button id="save-settings" type="button" class="primary">Save</button>
         </div>
         <p id="settings-status" class="status"></p>

@@ -49,12 +49,52 @@ different query pattern than a flat property read. Budget for that if you want t
 | vMultiPath | 32 | — | Not implemented: Needs HostMultipathInfo / storage path enumeration |
 | vLicense | 8 | 5 (62%) | |
 | vFileInfo | 5 | — | Not implemented: Needs HostDatastoreBrowser + SearchDatastoreSubFolders (datastore file-tree walking) |
-| vHealth | 3 | — | Not implemented: Needs EventManager / AlarmManager aggregation |
+| vHealth | 3 | 5 of 7 checks | Not alarms — RVTools' own computed checks. Zombie and Performance tip not implemented; see below |
 | vMetaData | 4 | 4 (100%) | |
 
 A realistic hackathon target is 6–8 sheets. Highest demo value per unit of
 effort: **vHost, vInfo, vCPU, vMemory, vDatastore, vSnapshot** — plus a
 performance/gauge view, which RVTools doesn't have at all.
+
+---
+
+## xlsx format parity
+
+Read out of `reference/RVTools_export_all_2024-08-18_15.54.15.xlsx` (RVTools 4.6)
+and reproduced by `src-tauri/src/export.rs`. Verified 2026-08-31 by generating an
+export from the lab and reading it back with openpyxl.
+
+| Element | RVTools | Ours |
+|---|---|---|
+| Header row | Verdana 9pt bold, `FFFFFFFF` on solid `FF000000`, left aligned | same |
+| Body text | Verdana 9pt, general alignment | same |
+| Integers | `#,##0`, right aligned | same |
+| Decimals | `#,##0.00`, right aligned | same |
+| Dates | real Excel serials, `yyyy/MM/dd HH:mm:ss` | same |
+| Booleans | the text `True` / `False` — **not** Excel booleans | same |
+| Freeze panes | `B2` (first row *and* first column) | same |
+| AutoFilter | `A1` to the last cell, header included | same |
+| Default row height | 15 | same |
+| Sheet order | fixed RVTools order | same order, sheets we lack are skipped |
+| Column widths | autofit to content | autofit to content (differs by data, as RVTools' would) |
+
+RVTools also styles a column uniformly rather than per cell, so the format is
+chosen from the whole column: a `Number` column is `#,##0` only if every value
+is integral, and a `Text` column becomes a date column only if every non-empty
+value parses as RFC 3339.
+
+Two deliberate differences:
+
+- **`vMetaData` keeps RVTools' four column names** (`RVTools major version`,
+  `RVTools version`, `xlsx creation datetime`, `Server`) so RVTools-aware
+  tooling still parses the file, but the values name *this* tool. Writing an
+  RVTools version number would misstate where the data came from.
+- The freeze pane is emitted as `state="frozen"` where RVTools writes
+  `state="frozenSplit"`. Both are frozen panes at `B2` in Excel;
+  `rust_xlsxwriter` does not expose the split variant.
+
+Timestamps are written as vCenter reports them (UTC), not converted to local
+time — converting would silently relabel every date in the export.
 
 ---
 
@@ -681,13 +721,33 @@ Friendly Path Name, File Name, File Type, File Size in bytes, Path
 
 ### vHealth
 
-> **Not implemented.** Needs EventManager / AlarmManager aggregation
+> **Correction (verified 2026-08-31).** The note that this needs
+> EventManager / AlarmManager aggregation is **wrong**. Every row in the
+> reference export is a check RVTools computes itself from inventory it has
+> already collected — there is not a single vCenter alarm in the sheet. The 43
+> rows break down as: Foldername 10, CDROM 10, Zombie 6, NTP 5, NTPD 5,
+> Snapshot 5, Performance tip 2.
 
 **RVTools columns:**
 
 ```
 Name, Message, Message type
 ```
+
+**Checks and their exact wording**, read out of the reference export:
+
+| Type | Message | Source | Implemented |
+|---|---|---|---|
+| `NTP` | `NTP Server value is null!` | `config.dateTimeInfo.ntpConfig.server` empty | yes |
+| `NTPD` | `NTPD service is not running!` | `config.service.service` key `ntpd` | yes |
+| `Foldername` | `Inconsistent Foldername! VMname = {vm} Foldername = {folder}` | folder in `config.files.vmPathName` vs VM name, **case-sensitive** | yes |
+| `CDROM` | `VM has a CDROM device connected! {label}` | `VirtualCdrom` with `connectable.connected` | yes |
+| `Snapshot` | `VM has an active snapshot! {name} created on {yyyy/MM/dd HH:mm:ss}` | `snapshot.rootSnapshotList`, flattened | yes |
+| `Zombie` | `Possibly a Zombie vmdk file! Please check.` | datastore file walk vs registered disks | **no** — needs `HostDatastoreBrowser` / `SearchDatastoreSubFolders` |
+| `Performance tip` | `In-Memory VM performance improvement possible! Please check documentation` | unknown | **no** — trigger not determinable from the export |
+
+RVTools emits host findings before VM findings, and groups a VM's findings
+together; we do the same.
 
 
 

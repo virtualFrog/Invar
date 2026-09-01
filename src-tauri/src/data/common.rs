@@ -83,3 +83,52 @@ pub fn ratio(numerator: i64, denominator: Option<i64>) -> Option<f64> {
         _ => None,
     }
 }
+
+/// The per-VM columns that RVTools repeats on every VM-derived sheet.
+pub struct VmContext {
+    pub name: String,
+    pub power_state: Option<String>,
+    pub template: Option<bool>,
+    pub host: Option<String>,
+    pub annotation: Option<String>,
+}
+
+/// Property paths behind `VmContext`, for callers to concatenate into their own
+/// retrieve.
+pub const VM_CONTEXT_PROPS: &[&str] = &[
+    "name",
+    "runtime.powerState",
+    "config.template",
+    "runtime.host",
+    "config.annotation",
+];
+
+impl VmContext {
+    /// `None` for vCLS VMs, which are vSphere-managed and excluded everywhere.
+    pub fn from(
+        vm: &crate::vcenter::soap::ManagedObject,
+        hosts: &HashMap<String, String>,
+    ) -> Result<Option<Self>, String> {
+        let Some(name) = vm.str_prop("name") else {
+            return Err(format!("VirtualMachine {} returned no name property", vm.moref));
+        };
+        if name.starts_with("vCLS-") {
+            return Ok(None);
+        }
+        Ok(Some(Self {
+            name,
+            power_state: vm.str_prop("runtime.powerState"),
+            template: vm.bool_prop("config.template"),
+            host: vm
+                .str_prop("runtime.host")
+                .map(|h| hosts.get(&h).cloned().unwrap_or(h)),
+            annotation: vm.str_prop("config.annotation"),
+        }))
+    }
+}
+
+const BYTES_PER_MIB: f64 = 1024.0 * 1024.0;
+
+pub fn bytes_to_mib(bytes: i64) -> f64 {
+    (bytes as f64 / BYTES_PER_MIB * 100.0).round() / 100.0
+}

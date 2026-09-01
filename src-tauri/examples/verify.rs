@@ -5,7 +5,7 @@
 //! Prints row counts and a sample row so results can be compared against what
 //! vCenter itself reports. Never prints credentials.
 
-use vcenter_inventory_lib::data::{vhost, vinfo, Cell, Table};
+use vcenter_inventory_lib::data::{vdisk, vhealth, vhost, vinfo, vsnapshot, Cell, Table};
 use vcenter_inventory_lib::vcenter::{SessionCache, VCenterConnection};
 
 #[tokio::main]
@@ -23,6 +23,9 @@ async fn main() -> Result<(), String> {
     let table: Table = match sheet.as_str() {
         "vInfo" => vinfo::fetch_vinfo_all(conns, &cache).await,
         "vHost" => vhost::fetch_vhost_all(conns, &cache).await,
+        "vDisk" => vdisk::fetch_vdisk_all(conns, &cache).await,
+        "vSnapshot" => vsnapshot::fetch_vsnapshot_all(conns, &cache).await,
+        "vHealth" => vhealth::fetch_vhealth_all(conns, &cache).await,
         other => return Err(format!("unknown sheet: {other}")),
     };
 

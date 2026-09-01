@@ -6,8 +6,11 @@
 //! into ~24 per-table definitions.
 
 pub mod common;
+pub mod vdisk;
+pub mod vhealth;
 pub mod vhost;
 pub mod vinfo;
+pub mod vsnapshot;
 
 use serde::Serialize;
 

@@ -115,11 +115,14 @@ Things that look like bugs here but aren't:
 |---|---|
 | `vSwitch` / `vPort` empty | No standard switches — all distributed |
 | `vHBA` WWN blank | Local NVMe adapters have no world-wide name |
-| `vSnapshot` often empty | Lab VMs usually have no snapshots — create one to test |
+| `vSnapshot` often empty | As of 2026-08-31 there are exactly 2: one each on `minion01` and `minion02`, both `.vmsn`-only (memoryKey `-1`, so no `.vmem`). Neither has children, so **nested snapshots are untested here** — create a snapshot of a snapshot if you need to exercise the recursion. |
+| `vDisk` shows no RDMs | All 85 disks are `VirtualDiskFlatVer2BackingInfo`. `Raw`, `Raw LUN ID` and `Raw Comp. Mode` are correctly empty; they need `RawDiskMappingVer1BackingInfo`, which this lab has none of. |
 | `vLicense` shows "Product Evaluation", total 0 | Eval licensing |
 | Host `/hardware` REST endpoints 404 | They genuinely don't exist on this version — that's why SOAP is required |
 | VM counts differ from vSphere UI | vCLS VMs filtered out |
 | SOAP returns one more VM than REST | `/rest/vcenter/vm` omits templates; `VirtualMachine` over SOAP includes them. Verified 2026-08-31: 24 via REST, 25 via SOAP, the extra being `vcf-services-runtime-template-9.1.0.0.25370367`. RVTools' vInfo includes templates with `Template = True`, so the SOAP count is the correct one. |
+| Host memory far larger than the box could hold (478 GiB on a mini PC) | Memory tiering is enabled. `hardware.memorySize` / `summary.hardware.memorySize` report DRAM **plus** the NVMe tier. Verified 2026-08-31: esx9-02/03 are 95.73 GiB DRAM + 382.94 GiB NVMe; esx9-01 is 63.73 + 254.94. Break the tiers out of `hardware.memoryTierInfo` (`<HostMemoryTierInfo>` with `type` of `DRAM` or `NVMe`) rather than presenting the total as physical RAM. Note `summary.hardware.memoryTieringType` does **not** exist — asking for it faults the whole query with HTTP 500. |
+| `summary.currentEVCModeKey` absent on some hosts | Only set for hosts in an EVC-enabled cluster; 1 of 3 here. |
 | ~300 open sessions on the lab vCenter | Mostly lab infrastructure, not your app: vCenter's own `vapi-endpoint` (~168), VCF Operations on `192.168.101.9` (~47), and govmomi checkers on `192.168.101.50`. Filter `sessionList` by your workstation's IP before concluding you are leaking. |
 
 ---

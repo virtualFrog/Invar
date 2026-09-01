@@ -31,6 +31,8 @@ These live under `docs/`.
 - `docs/VCENTER-PROPERTY-REFERENCE.md` — 89 verified vim25 property paths by object type
 - `docs/RVTOOLS-SHEETS-AND-COLUMNS.md` — all 27 RVTools sheets with exact column names,
   and how much of each the reference implementation covers
+- `docs/RUNNING-ON-WINDOWS.md` — prerequisites, commands and troubleshooting for
+  building and running on Windows
 
 ---
 
@@ -94,6 +96,19 @@ snapshot.rootSnapshotList                  →  <VirtualMachineSnapshotTree>
 Getting this wrong yields **zero rows with no error**. If a new SOAP array query
 returns nothing, check the element names first — dump the raw XML and look.
 
+**This applies only to the top-level `<val>` array.** Arrays *nested inside* a
+data object repeat the **field** name instead. Verified 2026-08-31 against the
+lab:
+
+```
+config.hardware.device      → <VirtualDevice xsi:type="VirtualDisk">   (type name)
+  …its storageIOAllocation  → <shares><shares>1000</shares>…           (field name)
+layoutEx.snapshot           → <VirtualMachineFileLayoutExSnapshotLayout>  (type name)
+  …its disk chain           → <disk><chain><fileKey>3</fileKey>…       (field name)
+snapshot.rootSnapshotList   → <VirtualMachineSnapshotTree>             (type name)
+  …its children             → <childSnapshotList>                      (field name)
+```
+
 ### Other API facts worth knowing
 
 - Lab vCenters use self-signed certs → the HTTP client needs
@@ -102,9 +117,14 @@ returns nothing, check the element names first — dump the raw XML and look.
   containing `&`, `<`, or `>` produces malformed XML and a confusing failure
   where REST-backed views work and SOAP-backed ones don't.
 - Snapshots nest (a snapshot can have children) — flatten recursively.
-- Not everything is available: `vMultiPath`, `vFileInfo`, and `vHealth` need
-  datastore file browsing and alarm/event aggregation, which are different API
-  areas entirely. Treat as out of scope unless you have time to spare.
+- Not everything is available: `vMultiPath` and `vFileInfo` need datastore file
+  browsing, a different API area entirely. Treat as out of scope unless you have
+  time to spare.
+- `vHealth` was previously listed here too, on the belief that it needs
+  alarm/event aggregation. **It does not** — RVTools computes it from inventory
+  it already has (NTP, NTPD, folder-name, CDROM and snapshot checks), so it is
+  cheap. Only its `Zombie` check needs datastore browsing. See
+  `docs/RVTOOLS-SHEETS-AND-COLUMNS.md`.
 
 ---
 
@@ -190,6 +210,7 @@ The reference implementation got these wrong; don't inherit them.
 - `npm run tauri dev` — run the desktop app.
 - `npm run tauri build` — produce an installer. It only builds for the platform
   you're on; Windows/Linux installers need to be built on those platforms.
+  Windows setup is written up in `docs/RUNNING-ON-WINDOWS.md`.
 - Adding a second binary (e.g. a web server) breaks `cargo run`, which
   `tauri dev` uses internally. Fix with `default-run = "<app-name>"` in
   `Cargo.toml`'s `[package]`.

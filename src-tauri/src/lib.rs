@@ -1,4 +1,5 @@
 pub mod data;
+pub mod export;
 pub mod vcenter;
 
 use data::Table;
@@ -48,7 +49,7 @@ async fn test_connection(conn: VCenterConnection, state: tauri::State<'_, AppSta
 /// single edit here plus its module.
 #[tauri::command]
 fn list_sheets() -> Vec<&'static str> {
-    vec!["vInfo", "vHost"]
+    vec!["vInfo", "vHost", "vDisk", "vSnapshot", "vHealth"]
 }
 
 #[tauri::command]
@@ -60,13 +61,88 @@ async fn fetch_sheet(sheet: String, state: tauri::State<'_, AppState>) -> Result
     match sheet.as_str() {
         "vInfo" => Ok(data::vinfo::fetch_vinfo_all(&conns, &state.cache).await),
         "vHost" => Ok(data::vhost::fetch_vhost_all(&conns, &state.cache).await),
+        "vDisk" => Ok(data::vdisk::fetch_vdisk_all(&conns, &state.cache).await),
+        "vSnapshot" => Ok(data::vsnapshot::fetch_vsnapshot_all(&conns, &state.cache).await),
+        "vHealth" => Ok(data::vhealth::fetch_vhealth_all(&conns, &state.cache).await),
         other => Err(format!("Unknown sheet: {other}")),
     }
+}
+
+/// Fetch every sheet the app knows about, for the export.
+///
+/// Returns the tables plus the servers they came from, and never fails as a
+/// whole: a sheet that errors contributes its warning and an empty table, so an
+/// export is never silently short of a sheet without saying so.
+async fn fetch_all_tables(state: &AppState) -> Result<(Vec<Table>, Vec<String>), String> {
+    let conns = state.connections()?;
+    if conns.is_empty() {
+        return Err("No vCenter connections configured — add one in Settings.".into());
+    }
+    let servers = conns.iter().map(|c| c.label()).collect();
+    let tables = vec![
+        data::vinfo::fetch_vinfo_all(&conns, &state.cache).await,
+        data::vhost::fetch_vhost_all(&conns, &state.cache).await,
+        data::vdisk::fetch_vdisk_all(&conns, &state.cache).await,
+        data::vsnapshot::fetch_vsnapshot_all(&conns, &state.cache).await,
+        data::vhealth::fetch_vhealth_all(&conns, &state.cache).await,
+    ];
+    Ok((tables, servers))
+}
+
+/// What an export produced, for the UI to report.
+#[derive(serde::Serialize)]
+struct ExportResult {
+    /// `None` when the user dismissed the save dialog.
+    path: Option<String>,
+    sheets: usize,
+    rows: usize,
+    /// Per-vCenter failures. An export that is missing a server's data says so.
+    warnings: Vec<String>,
+}
+
+#[tauri::command]
+async fn export_xlsx(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<ExportResult, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let (tables, servers) = fetch_all_tables(&state).await?;
+
+    let dialog = app
+        .dialog()
+        .file()
+        .set_title("Export inventory")
+        .set_file_name(export::default_filename())
+        .add_filter("Excel workbook", &["xlsx"]);
+    // The dialog blocks until the user answers, so it must not run on the
+    // async runtime's thread.
+    let chosen = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
+        .await
+        .map_err(|e| format!("save dialog failed: {e}"))?;
+
+    let Some(path) = chosen else {
+        return Ok(ExportResult { path: None, sheets: 0, rows: 0, warnings: Vec::new() });
+    };
+    let path = path
+        .into_path()
+        .map_err(|e| format!("could not resolve the chosen path: {e}"))?;
+
+    let rows = tables.iter().map(|t| t.rows.len()).sum();
+    let warnings = tables.iter().flat_map(|t| t.warnings.clone()).collect();
+    let sheets = tables.len();
+
+    export::write_workbook(&tables, &servers, &path)?;
+
+    Ok(ExportResult {
+        path: Some(path.display().to_string()),
+        sheets,
+        rows,
+        warnings,
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let dir = app.path().app_config_dir().map_err(|e| format!("no config dir: {e}"))?;
             app.manage(AppState {
@@ -87,7 +163,8 @@ pub fn run() {
             save_config,
             test_connection,
             list_sheets,
-            fetch_sheet
+            fetch_sheet,
+            export_xlsx
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

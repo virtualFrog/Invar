@@ -12,6 +12,12 @@ const el = (id) => document.getElementById(id);
 /** Currently displayed table, as returned by the backend. */
 let table = null;
 let sort = { index: null, ascending: true };
+/** Sheet currently selected in the sidebar. */
+let currentSheet = "vInfo";
+/** Sheet names, in sidebar order. */
+let sheets = [];
+/** Row count per sheet once fetched, shown beside its sidebar entry. */
+const rowCounts = new Map();
 
 // ---- rendering ----
 
@@ -55,6 +61,7 @@ function renderHead() {
     th.textContent = col.label;
     th.title = col.label;
     if (sort.index === i) {
+      th.classList.add("sorted");
       const arrow = document.createElement("span");
       arrow.className = "arrow";
       arrow.textContent = sort.ascending ? "▲" : "▼";
@@ -110,6 +117,7 @@ function renderBody() {
       td.textContent = text;
       td.title = text;
       if (table.columns[i].kind === "number") td.classList.add("num");
+      if (typeof value === "boolean") td.classList.add(value ? "bool-true" : "bool-false");
       if (text === "") td.classList.add("empty");
       tr.append(td);
     });
@@ -124,14 +132,48 @@ function renderBody() {
 
 // ---- data ----
 
+function renderNav() {
+  const nav = el("sheet-nav");
+  nav.replaceChildren();
+  for (const sheet of sheets) {
+    const item = document.createElement("button");
+    item.className = "nav-item" + (sheet === currentSheet ? " active" : "");
+    item.type = "button";
+
+    const label = document.createElement("span");
+    label.textContent = sheet;
+    item.append(label);
+
+    // Row counts appear once a sheet has been fetched; an unvisited sheet shows
+    // nothing rather than a misleading zero.
+    if (rowCounts.has(sheet)) {
+      const count = document.createElement("span");
+      count.className = "count";
+      count.textContent = rowCounts.get(sheet).toLocaleString();
+      item.append(count);
+    }
+
+    item.addEventListener("click", () => {
+      if (sheet === currentSheet) return;
+      currentSheet = sheet;
+      renderNav();
+      loadSheet();
+    });
+    nav.append(item);
+  }
+}
+
 async function loadSheet() {
   const button = el("refresh");
   button.disabled = true;
-  setStatus("Querying vCenter…");
+  el("sheet-title").textContent = currentSheet;
+  setStatus(`Querying vCenter for ${currentSheet}…`);
   el("warnings").hidden = true;
   try {
-    table = await invoke("fetch_vinfo");
+    table = await invoke("fetch_sheet", { sheet: currentSheet });
     sort = { index: null, ascending: true };
+    rowCounts.set(currentSheet, table.rows.length);
+    renderNav();
     renderWarnings(table.warnings);
     renderHead();
     renderBody();
@@ -139,6 +181,31 @@ async function loadSheet() {
     table = null;
     el("head-row").replaceChildren();
     el("body").replaceChildren();
+    setStatus(String(e));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// ---- export ----
+
+async function exportXlsx() {
+  const button = el("export");
+  button.disabled = true;
+  const previous = el("status").textContent;
+  setStatus("Collecting every sheet for export…");
+  try {
+    const result = await invoke("export_xlsx");
+    if (!result.path) {
+      setStatus(previous);
+      return;
+    }
+    // Warnings ride along with the export: a workbook missing a vCenter's rows
+    // must say so, not just report a row count.
+    renderWarnings(result.warnings);
+    const sheets = `${result.sheets} sheet${result.sheets === 1 ? "" : "s"}`;
+    setStatus(`Exported ${sheets}, ${result.rows.toLocaleString()} rows → ${result.path}`);
+  } catch (e) {
     setStatus(String(e));
   } finally {
     button.disabled = false;
@@ -223,11 +290,16 @@ async function saveSettings() {
 
 el("refresh").addEventListener("click", loadSheet);
 el("filter").addEventListener("input", renderBody);
+el("export").addEventListener("click", exportXlsx);
 el("open-settings").addEventListener("click", openSettings);
 el("add-connection").addEventListener("click", () => el("connections").append(connectionRow()));
 el("save-settings").addEventListener("click", saveSettings);
 
 (async function start() {
+  sheets = await invoke("list_sheets").catch(() => ["vInfo"]);
+  currentSheet = sheets[0] ?? currentSheet;
+  el("sheet-title").textContent = currentSheet;
+  renderNav();
   const cfg = await invoke("get_config").catch(() => ({ connections: [] }));
   if (cfg.connections.length === 0) {
     setStatus("No vCenter configured yet — open Settings to add one.");

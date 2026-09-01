@@ -229,7 +229,9 @@ pub struct ManagedObject {
 }
 
 impl ManagedObject {
-    fn from_element(obj: &Element) -> Self {
+    /// Build from an `<objects>` element. Public so sheets can be unit-tested
+    /// against captured vCenter XML without a live server.
+    pub fn from_element(obj: &Element) -> Self {
         let (moref, moref_type) = obj
             .child("obj")
             .map(|o| (o.text.clone(), o.attr("type").unwrap_or_default().to_string()))

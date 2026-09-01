@@ -24,6 +24,7 @@ const PROPS: &[&str] = &[
     "summary.hardware.numCpuCores",
     "summary.hardware.numCpuThreads",
     "summary.hardware.memorySize",
+    "hardware.memoryTierInfo",
     "summary.hardware.numNics",
     "summary.hardware.numHBAs",
     "summary.hardware.uuid",
@@ -71,6 +72,9 @@ pub fn columns() -> Vec<Column> {
         Column::number("# CPU Threads"),
         Column::number("CPU usage %"),
         Column::number("# Memory GiB"),
+        Column::text("Memory Tiering Type"),
+        Column::number("DRAM GiB"),
+        Column::number("NVMe Tier GiB"),
         Column::number("Memory usage %"),
         Column::number("# NICs"),
         Column::number("# HBAs"),
@@ -139,6 +143,31 @@ fn identifying_info(host: &ManagedObject, key: &str) -> Option<String> {
         .filter(|v| !v.is_empty() && v != "Default string")
 }
 
+/// Size of one memory tier, by `HostMemoryTierInfo` type (`DRAM`, `NVMe`).
+///
+/// With memory tiering enabled — the default on this hardware in vSphere 9 —
+/// `hardware.memorySize` is DRAM *plus* the NVMe tier, so a host reporting
+/// 478 GiB may hold only 96 GiB of DRAM. The tiers are broken out rather than
+/// letting one number imply physical RAM.
+fn memory_tier_bytes(host: &ManagedObject, tier_type: &str) -> Option<i64> {
+    host.array_prop("hardware.memoryTierInfo")
+        .iter()
+        .find(|t| t.text_at("type").as_deref() == Some(tier_type))
+        .and_then(|t| t.text_at("size"))
+        .and_then(|s| s.parse().ok())
+}
+
+/// The tier types present, e.g. `DRAM` or `DRAM + NVMe`.
+fn memory_tiering_type(host: &ManagedObject) -> Option<String> {
+    let types: Vec<String> = host
+        .array_prop("hardware.memoryTierInfo")
+        .iter()
+        .filter_map(|t| t.text_at("type"))
+        .filter(|t| !t.is_empty())
+        .collect();
+    (!types.is_empty()).then(|| types.join(" + "))
+}
+
 pub async fn fetch_vhost_core(session: &Session) -> Result<Vec<Vec<Cell>>, String> {
     let vm_totals = vm_totals_by_host(session).await?;
     let hosts = session.soap.retrieve("HostSystem", PROPS).await?;
@@ -194,6 +223,9 @@ pub async fn fetch_vhost_core(session: &Session) -> Result<Vec<Vec<Cell>>, Strin
             Cell::opt_num(host.i64_prop("summary.hardware.numCpuThreads").map(|v| v as f64)),
             Cell::opt_num(cpu_usage_pct),
             Cell::opt_num(memory_bytes.map(bytes_to_gib)),
+            Cell::opt_text(memory_tiering_type(&host)),
+            Cell::opt_num(memory_tier_bytes(&host, "DRAM").map(bytes_to_gib)),
+            Cell::opt_num(memory_tier_bytes(&host, "NVMe").map(bytes_to_gib)),
             Cell::opt_num(memory_usage_pct),
             Cell::opt_num(host.i64_prop("summary.hardware.numNics").map(|v| v as f64)),
             Cell::opt_num(host.i64_prop("summary.hardware.numHBAs").map(|v| v as f64)),

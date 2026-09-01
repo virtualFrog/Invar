@@ -39,6 +39,12 @@ impl Session {
 #[derive(Default)]
 pub struct SessionCache {
     entries: Mutex<HashMap<String, Arc<Session>>>,
+    /// Per-key login guard. Logging in cannot hold the `entries` lock — a slow
+    /// or unreachable vCenter would block every other server's lookups — so
+    /// concurrent callers for the *same* key would otherwise each log in and
+    /// all but one session would be orphaned. Serializing per key means one
+    /// login per vCenter no matter how many sheets are fetched at once.
+    logins: Mutex<HashMap<String, Arc<Mutex<()>>>>,
 }
 
 impl SessionCache {
@@ -50,16 +56,24 @@ impl SessionCache {
     pub async fn get(&self, conn: &VCenterConnection) -> Result<Arc<Session>, String> {
         let key = conn.cache_key();
 
-        let stale = {
-            let mut entries = self.entries.lock().await;
-            match entries.get(&key) {
-                Some(s) if s.is_fresh() => return Ok(Arc::clone(s)),
-                Some(_) => entries.remove(&key),
-                None => None,
-            }
+        if let Some(session) = self.fresh(&key).await {
+            return Ok(session);
+        }
+
+        let guard = {
+            let mut logins = self.logins.lock().await;
+            Arc::clone(logins.entry(key.clone()).or_default())
         };
-        // Retire the expired session outside the lock so one slow vCenter does
-        // not block lookups for the others.
+        let _login = guard.lock().await;
+
+        // Another caller may have logged in while this one waited for the guard.
+        if let Some(session) = self.fresh(&key).await {
+            return Ok(session);
+        }
+
+        let stale = self.entries.lock().await.remove(&key);
+        // Retire the expired session outside the entries lock so one slow
+        // vCenter does not block lookups for the others.
         if let Some(old) = stale {
             old.logout().await;
         }
@@ -75,6 +89,12 @@ impl SessionCache {
         let session = Arc::new(Session { rest, soap, established: Instant::now() });
         self.entries.lock().await.insert(key, Arc::clone(&session));
         Ok(session)
+    }
+
+    /// The cached session for this key, if it is still within its TTL.
+    async fn fresh(&self, key: &str) -> Option<Arc<Session>> {
+        let entries = self.entries.lock().await;
+        entries.get(key).filter(|s| s.is_fresh()).map(Arc::clone)
     }
 
     /// Log out of everything. Called on shutdown, for SIGINT and SIGTERM alike.
