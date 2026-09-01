@@ -1,0 +1,23 @@
+[package]
+name = "vcenter-inventory"
+version = "0.1.0"
+description = "Cross-platform vCenter inventory tool"
+edition = "2021"
+default-run = "vcenter-inventory"
+
+[lib]
+name = "vcenter_inventory_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls"] }
+tokio = { version = "1", features = ["full"] }
+quick-xml = "0.36"
+rust_xlsxwriter = "0.79"
+chrono = "0.4"

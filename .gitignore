@@ -1,0 +1,13 @@
+# Local-only credentials — never commit
+LAB-CREDENTIALS.local.md
+*.local.md
+
+# Rust / Tauri
+target/
+**/target/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
