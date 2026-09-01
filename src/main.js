@@ -12,8 +12,11 @@ const el = (id) => document.getElementById(id);
 /** Currently displayed table, as returned by the backend. */
 let table = null;
 let sort = { index: null, ascending: true };
+/** The dashboard view. Not a sheet — it has no table and is not exported. */
+const INSIGHTS = "Dale Insights";
+
 /** Sheet currently selected in the sidebar. */
-let currentSheet = "vInfo";
+let currentSheet = INSIGHTS;
 /** Sheet names, in sidebar order. */
 let sheets = [];
 /** Row count per sheet once fetched, shown beside its sidebar entry. */
@@ -130,12 +133,241 @@ function renderBody() {
   setStatus(shown === total ? `${total} rows` : `${shown} of ${total} rows`);
 }
 
+// ---- dashboard ----
+
+/** Number with thousands separators, or an em dash when absent. */
+function num(value, digits = 0) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+/** GiB rendered at a sensible scale. */
+function size(gib) {
+  if (gib === null || gib === undefined) return "—";
+  if (gib >= 1024) return `${num(gib / 1024, 2)} TiB`;
+  return `${num(gib, 1)} GiB`;
+}
+
+function make(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  // textContent throughout: datastore and cluster names are free text from
+  // vCenter and must never reach innerHTML.
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function kpi(label, value, unit, sub, tone = "hero") {
+  const card = make("div", `card kpi ${tone}`);
+  card.append(make("p", "kpi-label", label));
+  const line = make("div", "kpi-value", value);
+  if (unit) line.append(make("span", "kpi-unit", unit));
+  card.append(line);
+  if (sub) card.append(make("div", "kpi-sub", sub));
+  return card;
+}
+
+/** Donut gauge for overall storage utilisation. */
+function gauge(percent) {
+  const svgNS = "http://www.w3.org/2000/svg";
+  const size = 132;
+  const r = 52;
+  const circumference = 2 * Math.PI * r;
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("class", "gauge");
+  svg.setAttribute("width", size);
+  svg.setAttribute("height", size);
+  svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
+
+  const track = document.createElementNS(svgNS, "circle");
+  track.setAttribute("class", "gauge-track");
+  track.setAttribute("cx", size / 2);
+  track.setAttribute("cy", size / 2);
+  track.setAttribute("r", r);
+  svg.append(track);
+
+  const fill = document.createElementNS(svgNS, "circle");
+  fill.setAttribute("class", "gauge-fill");
+  fill.setAttribute("cx", size / 2);
+  fill.setAttribute("cy", size / 2);
+  fill.setAttribute("r", r);
+  const clamped = Math.max(0, Math.min(100, percent));
+  fill.setAttribute("stroke-dasharray", `${(clamped / 100) * circumference} ${circumference}`);
+  fill.setAttribute("transform", `rotate(-90 ${size / 2} ${size / 2})`);
+  if (clamped >= 90) fill.style.stroke = "var(--danger)";
+  else if (clamped >= 75) fill.style.stroke = "var(--warning)";
+  svg.append(fill);
+
+  const pct = document.createElementNS(svgNS, "text");
+  pct.setAttribute("class", "gauge-pct");
+  pct.setAttribute("x", size / 2);
+  pct.setAttribute("y", size / 2 + 4);
+  pct.textContent = `${num(percent, 1)}%`;
+  svg.append(pct);
+
+  const cap = document.createElementNS(svgNS, "text");
+  cap.setAttribute("class", "gauge-cap");
+  cap.setAttribute("x", size / 2);
+  cap.setAttribute("y", size / 2 + 20);
+  cap.textContent = "USED";
+  svg.append(cap);
+  return svg;
+}
+
+function statLine(key, value) {
+  const row = make("div", "stat");
+  row.append(make("span", "k", key), make("span", "v", value));
+  return row;
+}
+
+function barRow(name, valueText, percent, toneClass) {
+  const row = make("div", "bar-row");
+  row.append(make("span", "bar-name", name), make("span", "bar-val", valueText));
+  const track = make("div", "bar-track");
+  const fill = make("div", `bar-fill ${toneClass || ""}`);
+  fill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  track.append(fill);
+  row.append(track);
+  return row;
+}
+
+function kindClass(kind) {
+  const k = String(kind || "").toUpperCase();
+  if (k.startsWith("NFS")) return "nfs";
+  if (k.startsWith("VMFS")) return "vmfs";
+  return "other";
+}
+
+function renderDashboard(i) {
+  const board = el("dashboard");
+  board.replaceChildren();
+
+  // Headline tiles — the three the dashboard exists for, then context.
+  const kpis = make("div", "kpi-row");
+  kpis.append(
+    kpi("Total Hosts", num(i.hosts), null,
+      i.hosts_in_maintenance || i.hosts_disconnected
+        ? `${i.hosts_in_maintenance} in maintenance · ${i.hosts_disconnected} disconnected`
+        : `${i.clusters} clusters · all connected`),
+    kpi("Total Cores", num(i.cores), null,
+      `${num(i.vcpus)} vCPUs assigned`),
+    kpi("Total Storage", size(i.storage_capacity_gib), null,
+      `${size(i.storage_free_gib)} free across ${i.datastores} datastores`),
+    kpi("Virtual Machines", num(i.vms_total), null, `${num(i.vms_powered_on)} powered on`, "muted"),
+    kpi("Physical Memory", size(i.dram_gib), null,
+      i.memory_total_gib > i.dram_gib ? `${size(i.memory_total_gib)} incl. memory tiers` : null, "muted"),
+    kpi("vCPU : Core", i.vcpu_core_ratio ? `${num(i.vcpu_core_ratio, 2)}:1` : "—", null,
+      `${size(i.vram_gib)} vRAM assigned`, "muted"),
+  );
+  board.append(kpis);
+
+  // Storage utilisation + breakdown by backing type.
+  const row = make("div", "panel-row");
+
+  const gaugeCard = make("div", "card");
+  gaugeCard.append(make("p", "card-title", "Storage utilisation"));
+  const wrap = make("div", "gauge-wrap");
+  wrap.append(gauge(i.storage_used_percent));
+  const stats = make("div", "stat-list");
+  stats.append(
+    statLine("Capacity", size(i.storage_capacity_gib)),
+    statLine("Used", size(i.storage_used_gib)),
+    statLine("Free", size(i.storage_free_gib)),
+    statLine("Datastores", num(i.datastores)),
+  );
+  wrap.append(stats);
+  gaugeCard.append(wrap);
+  row.append(gaugeCard);
+
+  const typeCard = make("div", "card");
+  typeCard.append(make("p", "card-title", "Capacity by datastore type"));
+  const typeBars = make("div", "bars");
+  const maxCapacity = Math.max(1, ...i.storage_by_type.map((t) => t.capacity_gib));
+  for (const t of i.storage_by_type) {
+    typeBars.append(
+      barRow(
+        `${t.kind} · ${t.datastores} datastore${t.datastores === 1 ? "" : "s"}`,
+        `${size(t.used_gib)} of ${size(t.capacity_gib)}`,
+        (t.capacity_gib / maxCapacity) * 100,
+        kindClass(t.kind),
+      ),
+    );
+  }
+  typeCard.append(typeBars);
+  row.append(typeCard);
+  board.append(row);
+
+  // Fullest datastores, then clusters.
+  const row2 = make("div", "panel-row");
+
+  const fullCard = make("div", "card");
+  fullCard.append(make("p", "card-title", "Fullest datastores"));
+  const fullBars = make("div", "bars");
+  for (const d of i.top_datastores) {
+    const tone = d.used_percent >= 90 ? "crit" : d.used_percent >= 75 ? "warn" : "";
+    fullBars.append(
+      barRow(d.name, `${num(d.used_percent, 1)}% · ${size(d.capacity_gib)}`, d.used_percent, tone),
+    );
+  }
+  fullCard.append(fullBars);
+  row2.append(fullCard);
+
+  const clusterCard = make("div", "card");
+  clusterCard.append(make("p", "card-title", "Clusters"));
+  const table = make("table", "mini-table");
+  const thead = make("thead");
+  const hrow = make("tr");
+  for (const [label, cls] of [["Cluster", ""], ["Hosts", "num"], ["Cores", "num"], ["DRAM", "num"]]) {
+    hrow.append(make("th", cls, label));
+  }
+  thead.append(hrow);
+  table.append(thead);
+  const tbody = make("tbody");
+  for (const c of i.cluster_summaries) {
+    const tr = make("tr");
+    tr.append(
+      make("td", "", c.name),
+      make("td", "num", num(c.hosts)),
+      make("td", "num", num(c.cores)),
+      make("td", "num", size(c.dram_gib)),
+    );
+    tbody.append(tr);
+  }
+  table.append(tbody);
+  clusterCard.append(table);
+  row2.append(clusterCard);
+  board.append(row2);
+}
+
+async function loadInsights() {
+  const button = el("refresh");
+  button.disabled = true;
+  el("sheet-title").textContent = INSIGHTS;
+  setStatus("Building insights…");
+  el("warnings").hidden = true;
+  try {
+    const insights = await invoke("fetch_insights");
+    renderWarnings(insights.warnings);
+    renderDashboard(insights);
+    const servers = insights.servers.length;
+    setStatus(`${insights.hosts} hosts · ${insights.cores} cores · ${size(insights.storage_capacity_gib)} across ${servers} vCenter${servers === 1 ? "" : "s"}`);
+  } catch (e) {
+    el("dashboard").replaceChildren();
+    setStatus(String(e));
+  } finally {
+    button.disabled = false;
+  }
+}
+
 // ---- data ----
 
 function renderNav() {
   const nav = el("sheet-nav");
   nav.replaceChildren();
-  for (const sheet of sheets) {
+  for (const sheet of [INSIGHTS, ...sheets]) {
     const item = document.createElement("button");
     item.className = "nav-item" + (sheet === currentSheet ? " active" : "");
     item.type = "button";
@@ -163,7 +395,25 @@ function renderNav() {
   }
 }
 
+/** Show either the dashboard or the table, never both. */
+function setView(showDashboard) {
+  const board = el("dashboard");
+  board.hidden = !showDashboard;
+  // Drop the old dashboard DOM when leaving it, so stale numbers can never be
+  // shown again by a later toggle.
+  if (!showDashboard) board.replaceChildren();
+  el("table-wrap").hidden = showDashboard;
+  // The filter box only applies to table rows.
+  el("filter").disabled = showDashboard;
+  el("filter").style.visibility = showDashboard ? "hidden" : "visible";
+}
+
 async function loadSheet() {
+  if (currentSheet === INSIGHTS) {
+    setView(true);
+    return loadInsights();
+  }
+  setView(false);
   const button = el("refresh");
   button.disabled = true;
   el("sheet-title").textContent = currentSheet;
@@ -205,6 +455,29 @@ async function exportXlsx() {
     renderWarnings(result.warnings);
     const sheets = `${result.sheets} sheet${result.sheets === 1 ? "" : "s"}`;
     setStatus(`Exported ${sheets}, ${result.rows.toLocaleString()} rows → ${result.path}`);
+  } catch (e) {
+    setStatus(String(e));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+/// Host + storage topology as a standalone HTML file.
+async function exportReport() {
+  const button = el("report");
+  button.disabled = true;
+  const previous = el("status").textContent;
+  setStatus("Building the topology report…");
+  try {
+    const result = await invoke("export_topology_report");
+    if (!result.path) {
+      setStatus(previous);
+      return;
+    }
+    renderWarnings(result.warnings);
+    const hosts = `${result.hosts} host${result.hosts === 1 ? "" : "s"}`;
+    const stores = `${result.datastores} datastore${result.datastores === 1 ? "" : "s"}`;
+    setStatus(`Topology report: ${hosts}, ${stores} → ${result.path}`);
   } catch (e) {
     setStatus(String(e));
   } finally {
@@ -291,13 +564,13 @@ async function saveSettings() {
 el("refresh").addEventListener("click", loadSheet);
 el("filter").addEventListener("input", renderBody);
 el("export").addEventListener("click", exportXlsx);
+el("report").addEventListener("click", exportReport);
 el("open-settings").addEventListener("click", openSettings);
 el("add-connection").addEventListener("click", () => el("connections").append(connectionRow()));
 el("save-settings").addEventListener("click", saveSettings);
 
 (async function start() {
   sheets = await invoke("list_sheets").catch(() => ["vInfo"]);
-  currentSheet = sheets[0] ?? currentSheet;
   el("sheet-title").textContent = currentSheet;
   renderNav();
   const cfg = await invoke("get_config").catch(() => ({ connections: [] }));

@@ -1,5 +1,6 @@
 pub mod data;
 pub mod export;
+pub mod report;
 pub mod vcenter;
 
 use data::Table;
@@ -101,6 +102,17 @@ struct ExportResult {
 }
 
 #[tauri::command]
+async fn fetch_insights(
+    state: tauri::State<'_, AppState>,
+) -> Result<data::insights::Insights, String> {
+    let conns = state.connections()?;
+    if conns.is_empty() {
+        return Err("No vCenter connections configured — add one in Settings.".into());
+    }
+    Ok(data::insights::fetch_insights_all(&conns, &state.cache).await)
+}
+
+#[tauri::command]
 async fn export_xlsx(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<ExportResult, String> {
     use tauri_plugin_dialog::DialogExt;
 
@@ -139,6 +151,60 @@ async fn export_xlsx(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -
     })
 }
 
+/// What the topology report covered, for the UI to report.
+#[derive(serde::Serialize)]
+struct ReportResult {
+    /// `None` when the user dismissed the save dialog.
+    path: Option<String>,
+    hosts: usize,
+    datastores: usize,
+    warnings: Vec<String>,
+}
+
+#[tauri::command]
+async fn export_topology_report(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<ReportResult, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let conns = state.connections()?;
+    if conns.is_empty() {
+        return Err("No vCenter connections configured — add one in Settings.".into());
+    }
+    let topology = data::topology::fetch_topology_all(&conns, &state.cache).await;
+
+    let dialog = app
+        .dialog()
+        .file()
+        .set_title("Save topology report")
+        .set_file_name(report::default_filename())
+        .add_filter("HTML report", &["html"]);
+    let chosen = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
+        .await
+        .map_err(|e| format!("save dialog failed: {e}"))?;
+
+    let Some(path) = chosen else {
+        return Ok(ReportResult { path: None, hosts: 0, datastores: 0, warnings: Vec::new() });
+    };
+    let path = path
+        .into_path()
+        .map_err(|e| format!("could not resolve the chosen path: {e}"))?;
+
+    let hosts = topology.servers.iter().map(|s| s.all_hosts().len()).sum();
+    let datastores = topology.servers.iter().map(|s| s.datastores.len()).sum();
+
+    std::fs::write(&path, report::render(&topology))
+        .map_err(|e| format!("could not write {}: {e}", path.display()))?;
+
+    Ok(ReportResult {
+        path: Some(path.display().to_string()),
+        hosts,
+        datastores,
+        warnings: topology.warnings,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -164,7 +230,9 @@ pub fn run() {
             test_connection,
             list_sheets,
             fetch_sheet,
-            export_xlsx
+            fetch_insights,
+            export_xlsx,
+            export_topology_report
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

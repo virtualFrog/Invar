@@ -10,6 +10,8 @@ pub mod vdisk;
 pub mod vhealth;
 pub mod vhost;
 pub mod vinfo;
+pub mod insights;
+pub mod topology;
 pub mod vsnapshot;
 
 use serde::Serialize;

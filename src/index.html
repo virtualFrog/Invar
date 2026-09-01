@@ -20,6 +20,7 @@
         <nav id="sheet-nav" class="nav"></nav>
         <div class="sidebar-footer">
           <button id="export" class="primary">Export XLSX</button>
+          <button id="report" class="ghost">Topology Report</button>
           <button id="open-settings" class="ghost">Settings</button>
         </div>
       </aside>
@@ -38,7 +39,9 @@
 
         <div id="warnings" class="warnings" hidden></div>
 
-        <div class="table-wrap">
+        <div id="dashboard" class="dashboard" hidden></div>
+
+        <div id="table-wrap" class="table-wrap">
           <table id="table">
             <thead><tr id="head-row"></tr></thead>
             <tbody id="body"></tbody>
