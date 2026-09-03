@@ -140,6 +140,24 @@ fn service_running(host: &ManagedObject, key: &str) -> Option<bool> {
 
 /// One entry of `hardware.systemInfo.otherIdentifyingInfo`, by identifier key
 /// (`ServiceTag`, `AssetTag`, …).
+/// The chassis serial number.
+///
+/// `hardware.systemInfo.serialNumber` is the obvious field and is tried first,
+/// but vCenter 9.1.1 stopped returning it for any host in the reference lab
+/// while continuing to report the same value under
+/// `otherIdentifyingInfo/SerialNumberTag`. It was returned by 9.1.0.0300 on the
+/// same hardware, so this is not a "feature not in use" case — the field went
+/// away and the data did not.
+///
+/// `SerialNumberTag` is a distinct identifier from `ServiceTag`, which vHost
+/// reports in its own column; on this HPE hardware they happen to carry the
+/// same string, but they are not the same field and are not merged.
+fn serial_number(host: &ManagedObject) -> Option<String> {
+    host.str_prop("hardware.systemInfo.serialNumber")
+        .or_else(|| identifying_info(host, "SerialNumberTag"))
+        .or_else(|| identifying_info(host, "EnclosureSerialNumberTag"))
+}
+
 fn identifying_info(host: &ManagedObject, key: &str) -> Option<String> {
     host.array_prop("hardware.systemInfo.otherIdentifyingInfo")
         .iter()
@@ -260,7 +278,7 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String
             Cell::opt_num(host.i64_prop("config.dateTimeInfo.timeZone.gmtOffset").map(|v| v as f64)),
             Cell::opt_text(host.str_prop("summary.hardware.vendor")),
             Cell::opt_text(host.str_prop("summary.hardware.model")),
-            Cell::opt_text(host.str_prop("hardware.systemInfo.serialNumber")),
+            Cell::opt_text(serial_number(host)),
             Cell::opt_text(identifying_info(host, "ServiceTag")),
             Cell::opt_text(host.str_prop("hardware.biosInfo.biosVersion")),
             Cell::opt_text(host.str_prop("hardware.biosInfo.releaseDate")),
@@ -449,5 +467,72 @@ mod captured_tests {
             "got {:?}",
             at(&rows, "# VMs total")
         );
+    }
+}
+
+/// The serial-number fallback, which exists because a vCenter upgrade retired
+/// the obvious field.
+#[cfg(test)]
+mod serial_tests {
+    use super::*;
+    use crate::data::snapshot::test_support::{captured_snapshot, cells, col};
+    use crate::vcenter::xml;
+
+    /// vCenter 9.1.1 stopped returning `hardware.systemInfo.serialNumber`
+    /// entirely, so the serial has to come from `SerialNumberTag`. Without the
+    /// fallback this column is blank on every host and nothing errors.
+    #[test]
+    fn the_serial_falls_back_to_the_identifying_info_tag() {
+        let fragment = r#"<objects><obj type="HostSystem">host-1</obj>
+          <propSet><name>name</name><val>esx1</val></propSet>
+          <propSet><name>hardware.systemInfo.otherIdentifyingInfo</name><val>
+            <HostSystemIdentificationInfo>
+              <identifierValue>CZ00000TEST</identifierValue>
+              <identifierType><key>SerialNumberTag</key></identifierType>
+            </HostSystemIdentificationInfo>
+            <HostSystemIdentificationInfo>
+              <identifierValue>SVC00000TAG</identifierValue>
+              <identifierType><key>ServiceTag</key></identifierType>
+            </HostSystemIdentificationInfo>
+          </val></propSet></objects>"#;
+        let host = ManagedObject::from_element(&xml::parse(fragment).expect("parses"));
+        assert_eq!(serial_number(&host).as_deref(), Some("CZ00000TEST"));
+    }
+
+    /// When the field is present it wins: it is the canonical source, and older
+    /// vCenters and other vendors still populate it.
+    #[test]
+    fn the_direct_field_is_preferred_when_present() {
+        let fragment = r#"<objects><obj type="HostSystem">host-1</obj>
+          <propSet><name>hardware.systemInfo.serialNumber</name><val>DIRECT123</val></propSet>
+          <propSet><name>hardware.systemInfo.otherIdentifyingInfo</name><val>
+            <HostSystemIdentificationInfo>
+              <identifierValue>TAG456</identifierValue>
+              <identifierType><key>SerialNumberTag</key></identifierType>
+            </HostSystemIdentificationInfo>
+          </val></propSet></objects>"#;
+        let host = ManagedObject::from_element(&xml::parse(fragment).expect("parses"));
+        assert_eq!(serial_number(&host).as_deref(), Some("DIRECT123"));
+    }
+
+    /// Serial number and Service tag stay separate columns. They carry the same
+    /// string on this HPE hardware but are different identifiers, and merging
+    /// them would be wrong on hardware where they differ.
+    #[test]
+    fn serial_and_service_tag_remain_distinct_columns() {
+        let labels: Vec<String> = columns().into_iter().map(|c| c.label).collect();
+        assert!(labels.iter().any(|l| l == "Serial number"));
+        assert!(labels.iter().any(|l| l == "Service tag"));
+    }
+
+    /// The captured host, whose fixture predates the upgrade, still carries the
+    /// direct field -- so the fallback must not disturb it.
+    #[test]
+    fn the_captured_host_still_reports_a_serial() {
+        let rows = cells(rows(&captured_snapshot()).expect("named host"));
+        assert!(matches!(
+            rows[0][col(&columns(), "Serial number")],
+            Cell::Text(_)
+        ));
     }
 }

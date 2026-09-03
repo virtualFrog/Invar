@@ -27,7 +27,7 @@ which matters more here than in a typical lab.
 | Username | `administrator@vsphere.local` |
 | Password | see `LAB-CREDENTIALS.local.md` (untracked) |
 | Certificate | Self-signed, issued by `CN=CA, DC=vsphere, DC=local` — the HTTP client must skip verification (`skip_cert_verify: true`) |
-| Product | VMware vCenter Server 9.1.0.0300, build 25629530 (`apiVersion` 9.1.0.0) |
+| Product | VMware vCenter Server 9.1.1.0, build 25712839 (`apiVersion` 9.1.1.0). Upgraded from 9.1.0.0300 build 25629530 on 2026-09-03 by VCF; the ESXi hosts were still on 9.1.0.0200 at that point. |
 | Instance UUID | `574cef01-7f05-4a86-bb1d-88a92804d683` |
 
 This is the **management vCenter of a VCF 9 fleet**, and it manages the
@@ -206,22 +206,30 @@ Two more partial columns worth knowing before they look like defects:
 | vSC_VMK | `Port Group` | 9/18 | The NSX `vxlan` and `hyperbus` VMkernel ports sit on no port group at all. |
 | dvPort | `Active Uplink` | 9/60 | Most port groups inherit teaming from the switch and vCenter does not materialise `uplinkPortOrder` for them. |
 
-### A property that came and went
+### A property an upgrade retired
 
-`hardware.systemInfo.serialNumber` was returned by all three hosts when this
-lab was first documented, and returned by **none** of them a few hours later,
-while a VCF upgrade to 9.1.1 was in progress. Host connection state stayed
-`connected` and `overallStatus` stayed green throughout.
+`hardware.systemInfo.serialNumber` was returned by all three hosts on vCenter
+**9.1.0.0300.25629530**, and by **none** of them on **9.1.1.0.25712839**. Hosts
+stayed `connected` and green throughout, and the fixture captured before the
+upgrade still contains the value, so this is a real change and not a misreading.
 
-vHost's `Serial number` column is therefore empty at the moment. The value
-itself is not lost: it is also in
-`hardware.systemInfo.otherIdentifyingInfo` under `SerialNumberTag`,
-`EnclosureSerialNumberTag` and `ServiceTag`, and vHost's `Service tag` column
-reads the last of those, which still works.
+Nothing was changed while the upgrade was in flight — rewriting a verified path
+on the strength of a transient state is how wrong code gets locked in. The audit
+was re-run once 9.1.1 was stable across three probes, the property was still
+gone, and only then was the code changed.
 
-Nothing was changed in response. Run `cargo run --example property_audit` after
-the upgrade completes; if the property is still missing then, it is a real
-change worth handling, and if it is back it was transient.
+vHost's `Serial number` now falls back to
+`hardware.systemInfo.otherIdentifyingInfo/SerialNumberTag`, which reports the
+same value and survived the upgrade. The direct field is still preferred when
+present, since older vCenters and other vendors populate it.
+
+`Serial number` and `Service tag` remain **separate columns**. On this HPE
+hardware they carry the same string, which looks like duplication but is not:
+they are different identifier types, and merging them would be wrong on hardware
+where they differ.
+
+This is what `cargo run --example property_audit` is for. Run it after any
+vCenter upgrade.
 
 ### The one that looks alarming and is not
 

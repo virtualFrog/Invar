@@ -360,16 +360,34 @@ written; this applies it continuously, because an upgrade can retire a path
 that was verified perfectly well against the previous build, and a retired path
 does not error — it silently empties a column.
 
-It earned that on its first run, against build 9.1.0.0300.25629530:
+It earned that immediately. Against 9.1.0.0300.25629530 and again against
+9.1.1.0.25712839 after the VCF upgrade:
 
 - `summary.currentEVCModeKey` returns for no host. Expected: EVC is off.
-- `hardware.systemInfo.serialNumber` returns for no host **but did earlier the
-  same day** — the captured fixture contains it. The serial is still available
-  under `hardware.systemInfo.otherIdentifyingInfo` as `SerialNumberTag`, which
-  is what vHost's `Service tag` column reads, so no data is lost. Observed while
-  a VCF upgrade was running, so the mapping was deliberately **not** changed:
-  rewriting a verified path on the strength of a transient state is how wrong
-  code gets locked in. Re-audit once the upgrade finishes, and only then decide.
+- `hardware.systemInfo.serialNumber` returned for every host on 9.1.0.0300 and
+  for none on 9.1.1 — the upgrade retired it. The mapping was deliberately left
+  alone while the upgrade was in flight, re-audited once 9.1.1 was stable, and
+  only then changed: `Serial number` now falls back to
+  `otherIdentifyingInfo/SerialNumberTag`, which reports the same value. The
+  direct field is still preferred when present, since older vCenters populate
+  it. Verified live on 9.1.1: the column reads `CZ20300KTX` again.
+
+### Verified on vCenter 9.1.1, 2026-09-03
+
+Re-run after the VCF upgrade, all 24 tables, zero warnings: vInfo/vCPU/vMemory/
+vTools 164 each, vDisk 347, vPartition 802, vNetwork 236, vCD 23, vUSB 1,
+vSnapshot 5, vSource 1, vRP 43, vCluster 1, vHost 3, vHBA 3, vNIC 18, vSwitch 1,
+vPort 1, dvSwitch 1, dvPort 59, vSC_VMK 18, vDatastore 4, vLicense 1,
+vHealth 171.
+
+The audit found **122 properties, 120 still returning** — every
+`VirtualMachine`, `DistributedVirtualSwitch`, `DistributedVirtualPortgroup` and
+`ClusterComputeResource` path survived the upgrade untouched. The two that did
+not are `summary.currentEVCModeKey` (EVC is off, expected) and the serial number
+above.
+
+ESXi hosts were still on 9.1.0.0200 at that point, so host remediation had not
+run and `sttools-vSwitch` survived. That may change when it does.
 
 ### Phase 4: column depth on what already exists
 

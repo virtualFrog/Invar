@@ -110,6 +110,18 @@ snapshot.rootSnapshotList   → <VirtualMachineSnapshotTree>             (type n
   …its children             → <childSnapshotList>                      (field name)
 ```
 
+### An upgrade can retire a property, silently
+
+vCenter 9.1.0.0300 returned `hardware.systemInfo.serialNumber` for every host.
+9.1.1 returns it for none, on the same hardware, with the hosts still connected
+and green. Nothing errors — the column just empties.
+
+`cargo run --example property_audit` exists for exactly this. It re-checks every
+path in `data::SHEETS` against a live vCenter and names any that returned for
+nothing. **Run it after any vCenter upgrade**, and do not rewrite a mapping
+while an upgrade is in flight: a transient absence and a retired field look
+identical, and only the second is worth changing code for.
+
 ### Distributed-switch settings are wrapped, standard-switch ones are not
 
 Every policy on a distributed port group is an object carrying `inherited` plus
