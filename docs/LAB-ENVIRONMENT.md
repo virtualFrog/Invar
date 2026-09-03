@@ -206,6 +206,23 @@ Two more partial columns worth knowing before they look like defects:
 | vSC_VMK | `Port Group` | 9/18 | The NSX `vxlan` and `hyperbus` VMkernel ports sit on no port group at all. |
 | dvPort | `Active Uplink` | 9/60 | Most port groups inherit teaming from the switch and vCenter does not materialise `uplinkPortOrder` for them. |
 
+### A property that came and went
+
+`hardware.systemInfo.serialNumber` was returned by all three hosts when this
+lab was first documented, and returned by **none** of them a few hours later,
+while a VCF upgrade to 9.1.1 was in progress. Host connection state stayed
+`connected` and `overallStatus` stayed green throughout.
+
+vHost's `Serial number` column is therefore empty at the moment. The value
+itself is not lost: it is also in
+`hardware.systemInfo.otherIdentifyingInfo` under `SerialNumberTag`,
+`EnclosureSerialNumberTag` and `ServiceTag`, and vHost's `Service tag` column
+reads the last of those, which still works.
+
+Nothing was changed in response. Run `cargo run --example property_audit` after
+the upgrade completes; if the property is still missing then, it is a real
+change worth handling, and if it is back it was transient.
+
 ### The one that looks alarming and is not
 
 **vHealth reports `Inconsistent Foldername!` for all 161 VMs.**

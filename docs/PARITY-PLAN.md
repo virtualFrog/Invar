@@ -25,7 +25,7 @@ Six of RVTools' 27 sheets exist, five of them as UI sheets and one export-only.
 | vSnapshot | 22 | 13 | Partial |
 | vHealth | 3 | 3 (5 of 7 checks) | Partial |
 | vMetaData | 4 | 4 (export only) | Done |
-| The other 7 sheets | | 0 | Missing |
+| The other 2 sheets | | 0 | Missing |
 
 Missing entirely: vCPU, vMemory, vPartition, vNetwork, vCD, vUSB, vTools,
 vSource, vRP, vCluster, vHBA, vNIC, vSwitch, vPort, dvSwitch, dvPort, vSC_VMK,
@@ -327,6 +327,49 @@ Test count 80 to 107.
 | `vLicense` (8) | `LicenseManager` | Direct moref call, not a ContainerView; `retrieve()` cannot express it as written |
 
 Takes the app to 25 sheets. Size: M. `vSource` is close to free.
+
+### Phase 3 landed and verified, 2026-09-03
+
+vSource, vRP, vCluster, vDatastore and vLicense. The app is at **25 of 27
+sheets**; only vMultiPath and vFileInfo remain, both Phase 5 blockers.
+
+Two of these do not fit the ContainerView shape, so the SOAP client grew two
+methods: `retrieve_moref` reaches an object by its own moref (LicenseManager is
+a singleton in no container), and `service_content` wraps
+`RetrieveServiceContent` (the vCenter is not an object in its own inventory).
+
+Live, all 24 tables, zero warnings: vInfo/vCPU/vMemory/vTools 164 each,
+vDisk 348, vPartition 793, vNetwork 236, vCD 23, vUSB 1, vSnapshot 5,
+vSource 1, vRP 43, vCluster 1, vHost 3, vHBA 3, vNIC 18, vSwitch 1, vPort 1,
+dvSwitch 1, dvPort 59, vSC_VMK 18, vDatastore 4, vLicense 1, vHealth 171.
+
+`licenses` is a `LicenseManagerLicenseInfo[]`, so its elements carry the type
+name — a first pass looking for the field name found zero and would have
+shipped an empty sheet with no error. An evaluation licence reports `total = 0`
+meaning unlimited rather than exhausted, and is passed through as stated.
+
+A licence key is a credential, so the fixture masks it, and that rule now lives
+in the sanitiser rather than in someone's memory.
+
+### Continuous verification
+
+`cargo run --example property_audit` re-checks every path the app declares
+against a live vCenter, reading the property sets straight off `data::SHEETS`
+so there is no list to keep in sync. Ground rule 1 governs the moment code is
+written; this applies it continuously, because an upgrade can retire a path
+that was verified perfectly well against the previous build, and a retired path
+does not error — it silently empties a column.
+
+It earned that on its first run, against build 9.1.0.0300.25629530:
+
+- `summary.currentEVCModeKey` returns for no host. Expected: EVC is off.
+- `hardware.systemInfo.serialNumber` returns for no host **but did earlier the
+  same day** — the captured fixture contains it. The serial is still available
+  under `hardware.systemInfo.otherIdentifyingInfo` as `SerialNumberTag`, which
+  is what vHost's `Service tag` column reads, so no data is lost. Observed while
+  a VCF upgrade was running, so the mapping was deliberately **not** changed:
+  rewriting a verified path on the strength of a transient state is how wrong
+  code gets locked in. Re-audit once the upgrade finishes, and only then decide.
 
 ### Phase 4: column depth on what already exists
 
