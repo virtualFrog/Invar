@@ -60,6 +60,7 @@ find-and-replace on the serial string alone would have leaked it.
 | `vm_connected_cdrom.xml` | a Kubernetes control-plane VM | vHealth CDROM: a genuinely connected `VirtualCdrom`, alongside NICs that carry their own `connectable` block |
 | `vm_template.xml` | a Windows template | `config.template = true`, powered off, `.vmtx` rather than `.vmx` |
 | `host_full.xml` | an ESXi host | vHost across all 40 host properties; vHealth NTP/NTPD via the `HostService` array |
+| `containers.xml` | the Folder / Datacenter / ClusterComputeResource chain | the inventory path index: Datacenter, Cluster and Folder resolution. Holds every ancestor the VM and host captures reference, up to the datacenter, so the walk runs over a complete tree. Several `<objects>` under one root, loaded with `captured_many`. |
 
 Three of the four VMs reference `host-28`, which is deliberately *not* in the
 corpus, so the unresolved-moref fallback is exercised by real data rather than a

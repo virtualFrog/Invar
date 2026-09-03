@@ -110,6 +110,24 @@ snapshot.rootSnapshotList   → <VirtualMachineSnapshotTree>             (type n
   …its children             → <childSnapshotList>                      (field name)
 ```
 
+### Walking `parent`, and querying several types at once
+
+Verified live 2026-09-03, for the inventory path index:
+
+- A moref-valued property carries **two** type attributes:
+  `<val type="Folder" xsi:type="ManagedObjectReference">group-v4</val>`.
+  `xsi:type` only says "this is a reference"; the plain `type` attribute is the
+  managed-object type. Walk `parent` on the latter — do not infer a type from
+  the moref prefix.
+- `CreateContainerView` accepts a **repeating `<type>`**, and one
+  `RetrievePropertiesEx` can carry one `<propSet>` per type against that view.
+  Folder + Datacenter + ComputeResource is one round trip, not three.
+- A `ComputeResource` view **also returns `ClusterComputeResource`**, its
+  subclass. Querying both types is redundant.
+- A VM reaches its folder via `parent`, but its cluster via `runtime.host` and
+  then the host's `parent`. Folders and compute are separate branches of the
+  inventory tree; there is no folder path from a VM to its cluster.
+
 ### Other API facts worth knowing
 
 - Lab vCenters use self-signed certs → the HTTP client needs

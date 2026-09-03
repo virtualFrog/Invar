@@ -5,7 +5,7 @@
 //! `dataKey` and `memoryKey` index into `layoutEx.file`.
 
 use super::common::{bytes_to_mib, VmContext, VM_CONTEXT_PROPS};
-use super::snapshot::{InventorySnapshot, SheetSpec};
+use super::snapshot::{InventorySnapshot, RowSource, SheetSpec};
 use super::{Cell, Column, Table};
 use crate::vcenter::soap::ManagedObject;
 use crate::vcenter::xml::Element;
@@ -97,7 +97,7 @@ fn snapshot_layout(vm: &ManagedObject) -> HashMap<String, (Option<String>, Optio
         .collect()
 }
 
-pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
+pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String> {
     let hosts = &snap.host_names;
 
     let mut rows = Vec::new();
@@ -139,7 +139,7 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
                 (a, b) => Some(a.as_ref().map_or(0, |f| f.1) + b.as_ref().map_or(0, |f| f.1)),
             };
 
-            rows.push(vec![
+            rows.push((vm.moref.clone(), vec![
                 Cell::Text(ctx.name.clone()),
                 Cell::opt_text(ctx.power_state.clone()),
                 Cell::opt_text(snap.name),
@@ -153,7 +153,7 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
                 Cell::Bool(current.as_deref() == Some(snap.moref.as_str())),
                 Cell::opt_text(ctx.host.clone()),
                 Cell::opt_text(ctx.annotation.clone()),
-            ]);
+            ]));
         }
     }
 
@@ -165,6 +165,7 @@ pub const SPEC: SheetSpec = SheetSpec {
     columns,
     vm_props: &[VM_CONTEXT_PROPS, VM_PROPS],
     host_props: &[],
+    source: RowSource::Vm,
     rows,
 };
 
@@ -210,13 +211,13 @@ mod tests {
 #[cfg(test)]
 mod captured_tests {
     use super::*;
-    use crate::data::snapshot::test_support::{captured_snapshot, col};
+    use crate::data::snapshot::test_support::{captured_snapshot, cells, col};
 
     /// One of the four captured VMs carries a snapshot, so the sheet is one
     /// row: vSnapshot is per-snapshot, not per-VM.
     #[test]
     fn only_vms_with_snapshots_produce_rows() {
-        let rows = rows(&captured_snapshot()).expect("named VMs");
+        let rows = cells(rows(&captured_snapshot()).expect("named VMs"));
         assert_eq!(rows.len(), 1);
         let vm = &rows[0][col(&columns(), "VM")];
         assert!(matches!(vm, Cell::Text(n) if n == "vSAN File Service Node (1)"));
@@ -227,7 +228,7 @@ mod captured_tests {
     /// rows and no error, which is the failure this capture exists to catch.
     #[test]
     fn the_snapshot_fields_come_off_the_tree_element() {
-        let rows = rows(&captured_snapshot()).expect("named VMs");
+        let rows = cells(rows(&captured_snapshot()).expect("named VMs"));
         let at = |l: &str| rows[0][col(&columns(), l)].clone();
         assert!(matches!(at("Name"), Cell::Text(ref s) if s == "eam-snapshot"));
         // `state` is the VM's power state at the moment the snapshot was taken,

@@ -103,17 +103,69 @@ pub struct Table {
 /// generically so no fetcher has to remember it.
 pub const VI_SDK_SERVER: &str = "VI SDK Server";
 
+/// Where an object sits in the inventory. RVTools carries these on nearly every
+/// sheet; like `VI SDK Server` they are appended in one place rather than
+/// restated by ~20 sheet modules.
+pub const DATACENTER: &str = "Datacenter";
+pub const CLUSTER: &str = "Cluster";
+pub const FOLDER: &str = "Folder";
+
 impl Table {
     pub fn new(name: &str, columns: Vec<Column>) -> Self {
         Self { name: name.into(), columns, rows: Vec::new(), warnings: Vec::new() }
     }
 
-    /// Append rows from one vCenter, tagging each with its source server.
-    pub fn extend_from(&mut self, server: &str, rows: Vec<Vec<Cell>>) {
-        for mut row in rows {
+    /// Append rows from one vCenter, tagging each with its inventory location
+    /// and its source server.
+    ///
+    /// `rows` carries the moref of the object each row describes, so the
+    /// location columns can be resolved here rather than in every sheet.
+    pub fn extend_from(
+        &mut self,
+        server: &str,
+        rows: Vec<(String, Vec<Cell>)>,
+        source: snapshot::RowSource,
+        paths: &snapshot::PathIndex,
+    ) {
+        for (moref, mut row) in rows {
+            match source {
+                snapshot::RowSource::Vm => {
+                    row.push(Cell::opt_text(paths.datacenter_of(&moref)));
+                    row.push(Cell::opt_text(paths.cluster_of_vm(&moref)));
+                    row.push(Cell::opt_text(paths.folder_of(&moref)));
+                }
+                snapshot::RowSource::Host => {
+                    row.push(Cell::opt_text(paths.datacenter_of(&moref)));
+                    row.push(Cell::opt_text(paths.cluster_of_host(&moref)));
+                }
+                snapshot::RowSource::None => {}
+            }
             row.push(Cell::Text(server.to_string()));
             self.rows.push(row);
         }
+    }
+
+    /// Call once after construction so the appended columns line up with the
+    /// values `extend_from` pushes. Order matters and mirrors RVTools: the
+    /// location columns sit before `VI SDK Server`, which is always last.
+    ///
+    /// vHost carries `Datacenter` and `Cluster` but no `Folder` — a host's
+    /// folder is the datacenter's `host` folder, which RVTools does not show.
+    /// vHealth carries none of them: its sheet is three columns wide.
+    pub fn with_location_columns(mut self, source: snapshot::RowSource) -> Self {
+        match source {
+            snapshot::RowSource::Vm => {
+                self.columns.push(Column::text(DATACENTER));
+                self.columns.push(Column::text(CLUSTER));
+                self.columns.push(Column::text(FOLDER));
+            }
+            snapshot::RowSource::Host => {
+                self.columns.push(Column::text(DATACENTER));
+                self.columns.push(Column::text(CLUSTER));
+            }
+            snapshot::RowSource::None => {}
+        }
+        self
     }
 
     /// Call once after construction so `VI SDK Server` lines up with the value

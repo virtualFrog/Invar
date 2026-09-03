@@ -4,7 +4,7 @@
 //! written; see `docs/VCENTER-PROPERTY-REFERENCE.md`.
 
 use super::common::{bytes_to_gib, percent};
-use super::snapshot::{InventorySnapshot, SheetSpec};
+use super::snapshot::{InventorySnapshot, RowSource, SheetSpec};
 use super::{Cell, Column, Table};
 use crate::vcenter::VCenterConnection;
 
@@ -75,7 +75,7 @@ pub fn columns() -> Vec<Column> {
 /// Build vInfo rows from an already-fetched snapshot. Framework-free and
 /// I/O-free by design: the Tauri command is a thin wrapper, so a web-server
 /// binary can call this untouched and a test can call it with captured XML.
-pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
+pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String> {
     let hosts = &snap.host_names;
 
     let mut rows = Vec::with_capacity(snap.vms.len());
@@ -97,7 +97,7 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
             _ => None,
         };
 
-        rows.push(vec![
+        rows.push((vm.moref.clone(), vec![
             Cell::Text(name),
             Cell::opt_text(vm.str_prop("runtime.powerState")),
             Cell::opt_bool(vm.bool_prop("config.template")),
@@ -132,7 +132,7 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
             Cell::opt_text(vm.str_prop("config.annotation")),
             Cell::opt_text(vm.str_prop("config.changeVersion")),
             Cell::opt_text(vm.str_prop("config.uuid")),
-        ]);
+        ]));
     }
 
     Ok(rows)
@@ -143,6 +143,7 @@ pub const SPEC: SheetSpec = SheetSpec {
     columns,
     vm_props: &[VM_PROPS],
     host_props: &[],
+    source: RowSource::Vm,
     rows,
 };
 
@@ -159,7 +160,7 @@ pub async fn fetch_vinfo_all(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::snapshot::test_support::{col, host, vm};
+    use crate::data::snapshot::test_support::{cells, col, host, vm};
 
     fn cell(rows: &[Vec<Cell>], row: usize, label: &str) -> Cell {
         rows[row][col(&columns(), label)].clone()
@@ -172,7 +173,7 @@ mod tests {
             vec![host("host-7", &[("name", "esx9-01.example.com")])],
         );
 
-        let rows = rows(&snap).expect("named VM yields a row");
+        let rows = cells(rows(&snap).expect("named VM yields a row"));
         assert_eq!(rows.len(), 1);
         assert!(matches!(cell(&rows, 0, "VM"), Cell::Text(v) if v == "OPS91"));
         assert!(
@@ -189,7 +190,7 @@ mod tests {
             vec![vm("vm-1", &[("name", "OPS91"), ("runtime.host", "host-404")])],
             Vec::new(),
         );
-        let rows = rows(&snap).expect("row is still produced");
+        let rows = cells(rows(&snap).expect("row is still produced"));
         assert!(matches!(cell(&rows, 0, "Host"), Cell::Text(v) if v == "host-404"));
     }
 
@@ -202,7 +203,7 @@ mod tests {
             ],
             Vec::new(),
         );
-        let rows = rows(&snap).expect("rows build");
+        let rows = cells(rows(&snap).expect("rows build"));
         assert_eq!(rows.len(), 1);
         assert!(matches!(cell(&rows, 0, "VM"), Cell::Text(v) if v == "OPS91"));
     }
@@ -230,7 +231,7 @@ mod tests {
             )],
             Vec::new(),
         );
-        let rows = rows(&snap).expect("rows build");
+        let rows = cells(rows(&snap).expect("rows build"));
         assert!(matches!(cell(&rows, 0, "CPU Usage (%)"), Cell::Empty));
     }
 
@@ -249,7 +250,7 @@ mod tests {
             )],
             Vec::new(),
         );
-        let built = rows(&both).expect("rows build");
+        let built = cells(rows(&both).expect("rows build"));
         assert!(matches!(cell(&built, 0, "Provisioned GiB"), Cell::Number(v) if v == 2.0));
         assert!(matches!(cell(&built, 0, "In Use GiB"), Cell::Number(v) if v == 1.0));
 
@@ -260,7 +261,7 @@ mod tests {
             )],
             Vec::new(),
         );
-        let built = rows(&half).expect("rows build");
+        let built = cells(rows(&half).expect("rows build"));
         assert!(matches!(cell(&built, 0, "Provisioned GiB"), Cell::Empty));
     }
 }
@@ -269,7 +270,7 @@ mod tests {
 #[cfg(test)]
 mod captured_tests {
     use super::*;
-    use crate::data::snapshot::test_support::{captured_snapshot, col};
+    use crate::data::snapshot::test_support::{captured_snapshot, cells, col};
 
     fn row_for<'a>(rows: &'a [Vec<Cell>], vm: &str) -> &'a Vec<Cell> {
         let i = col(&columns(), "VM");
@@ -280,7 +281,7 @@ mod captured_tests {
 
     #[test]
     fn one_row_per_captured_vm() {
-        let rows = rows(&captured_snapshot()).expect("captured VMs all have names");
+        let rows = cells(rows(&captured_snapshot()).expect("captured VMs all have names"));
         assert_eq!(rows.len(), 4);
     }
 
@@ -288,7 +289,7 @@ mod captured_tests {
     /// SOAP's 161 rather than REST's 154 is the right VM total for this lab.
     #[test]
     fn a_template_is_a_row_and_is_flagged() {
-        let rows = rows(&captured_snapshot()).expect("named VMs");
+        let rows = cells(rows(&captured_snapshot()).expect("named VMs"));
         let r = row_for(&rows, "Windows Server 2025");
         assert!(matches!(r[col(&columns(), "Template")], Cell::Bool(true)));
         assert!(matches!(&r[col(&columns(), "Powerstate")], Cell::Text(s) if s == "poweredOff"));
@@ -300,7 +301,7 @@ mod captured_tests {
     /// row.
     #[test]
     fn host_resolves_when_present_and_falls_back_when_not() {
-        let rows = rows(&captured_snapshot()).expect("named VMs");
+        let rows = cells(rows(&captured_snapshot()).expect("named VMs"));
         let on_host = row_for(&rows, "vSAN File Service Node (1)");
         assert!(
             matches!(&on_host[col(&columns(), "Host")], Cell::Text(h) if h == "esx01.lab.local")
@@ -315,14 +316,14 @@ mod captured_tests {
     /// A name carrying spaces and parentheses survives the XML round trip.
     #[test]
     fn a_name_with_spaces_and_parentheses_survives() {
-        let rows = rows(&captured_snapshot()).expect("named VMs");
+        let rows = cells(rows(&captured_snapshot()).expect("named VMs"));
         let r = row_for(&rows, "vSAN File Service Node (1)");
         assert!(matches!(&r[col(&columns(), "HW version")], Cell::Text(v) if v == "vmx-21"));
     }
 
     #[test]
     fn hardware_columns_match_the_capture() {
-        let rows = rows(&captured_snapshot()).expect("named VMs");
+        let rows = cells(rows(&captured_snapshot()).expect("named VMs"));
         let r = row_for(&rows, "appliance01");
         let at = |l: &str| r[col(&columns(), l)].clone();
         assert!(matches!(at("CPUs"), Cell::Number(n) if n == 4.0));

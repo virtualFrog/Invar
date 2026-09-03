@@ -6,7 +6,7 @@
 //! element name would silently yield nothing.
 
 use super::common::{VmContext, VM_CONTEXT_PROPS};
-use super::snapshot::{InventorySnapshot, SheetSpec};
+use super::snapshot::{InventorySnapshot, RowSource, SheetSpec};
 use super::{Cell, Column, Table};
 use crate::vcenter::xml::Element;
 use crate::vcenter::VCenterConnection;
@@ -71,7 +71,7 @@ fn controller_labels(devices: &[&Element]) -> HashMap<String, String> {
         .collect()
 }
 
-pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
+pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String> {
     let hosts = &snap.host_names;
 
     let mut rows = Vec::new();
@@ -94,7 +94,7 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
                 .and_then(|b| b.xsi_type.as_deref())
                 .is_some_and(|t| t.starts_with("RawDiskMapping"));
 
-            rows.push(vec![
+            rows.push((vm.moref.clone(), vec![
                 Cell::Text(ctx.name.clone()),
                 Cell::opt_text(ctx.power_state.clone()),
                 Cell::opt_bool(ctx.template),
@@ -125,7 +125,7 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
                 Cell::opt_text(backing.and_then(|b| text(b, "compatibilityMode"))),
                 Cell::opt_text(ctx.host.clone()),
                 Cell::opt_text(ctx.annotation.clone()),
-            ]);
+            ]));
         }
     }
 
@@ -137,6 +137,7 @@ pub const SPEC: SheetSpec = SheetSpec {
     columns,
     vm_props: &[VM_CONTEXT_PROPS, VM_PROPS],
     host_props: &[],
+    source: RowSource::Vm,
     rows,
 };
 
@@ -150,7 +151,7 @@ pub async fn fetch_vdisk_all(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::snapshot::test_support::{captured, captured_snapshot, col, VM_MULTI_DISK};
+    use crate::data::snapshot::test_support::{captured, captured_snapshot, cells, col, VM_MULTI_DISK};
 
     fn cell(rows: &[Vec<Cell>], row: usize, label: &str) -> Cell {
         rows[row][col(&columns(), label)].clone()
@@ -168,7 +169,7 @@ mod tests {
     /// shape we imagined.
     #[test]
     fn every_virtual_disk_in_the_capture_becomes_a_row() {
-        let rows = rows(&captured_snapshot()).expect("captured VMs all have names");
+        let rows = cells(rows(&captured_snapshot()).expect("captured VMs all have names"));
         assert_eq!(rows.len(), 11);
     }
 
@@ -186,7 +187,7 @@ mod tests {
             devices.len()
         );
         let snap = crate::data::snapshot::InventorySnapshot::from_parts(vec![vm], Vec::new());
-        assert_eq!(rows(&snap).expect("named VM").len(), 6);
+        assert_eq!(cells(rows(&snap).expect("named VM")).len(), 6);
     }
 
     /// capacityInKB is KiB; RVTools' column is MiB. 33554432 KiB = 32768 MiB.
@@ -194,7 +195,7 @@ mod tests {
     fn capacity_is_converted_from_kib_to_the_mib_column() {
         let snap =
             crate::data::snapshot::InventorySnapshot::from_parts(vec![captured(VM_MULTI_DISK)], Vec::new());
-        let rows = rows(&snap).expect("named VM");
+        let rows = cells(rows(&snap).expect("named VM"));
         assert_eq!(text_of(&cell(&rows, 0, "Disk")), Some("Hard disk 1"));
         assert!(matches!(cell(&rows, 0, "Capacity MiB"), Cell::Number(n) if n == 32768.0));
     }
@@ -205,7 +206,7 @@ mod tests {
     fn a_disk_names_the_controller_it_hangs_off() {
         let snap =
             crate::data::snapshot::InventorySnapshot::from_parts(vec![captured(VM_MULTI_DISK)], Vec::new());
-        let rows = rows(&snap).expect("named VM");
+        let rows = cells(rows(&snap).expect("named VM"));
         let controller = cell(&rows, 0, "Controller");
         let controller = text_of(&controller).expect("controller resolves to a label");
         assert!(
@@ -221,7 +222,7 @@ mod tests {
     fn flat_backed_disks_report_no_raw_mapping() {
         let snap =
             crate::data::snapshot::InventorySnapshot::from_parts(vec![captured(VM_MULTI_DISK)], Vec::new());
-        let rows = rows(&snap).expect("named VM");
+        let rows = cells(rows(&snap).expect("named VM"));
         for (i, _) in rows.iter().enumerate() {
             assert!(matches!(cell(&rows, i, "Raw"), Cell::Bool(false)));
             assert!(matches!(cell(&rows, i, "Raw LUN ID"), Cell::Empty));
@@ -237,7 +238,7 @@ mod tests {
     fn storage_io_allocation_is_read_from_the_nested_shares_block() {
         let snap =
             crate::data::snapshot::InventorySnapshot::from_parts(vec![captured(VM_MULTI_DISK)], Vec::new());
-        let rows = rows(&snap).expect("named VM");
+        let rows = cells(rows(&snap).expect("named VM"));
         assert!(
             matches!(cell(&rows, 0, "Shares"), Cell::Number(n) if n > 0.0),
             "shares should come through as a number, got {:?}",

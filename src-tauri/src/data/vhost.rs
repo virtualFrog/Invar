@@ -5,7 +5,7 @@
 //! re-querying. Every path below was read off the live vCenter first.
 
 use super::common::{bytes_to_gib, ratio, vm_totals_by_host, HostVmTotals, VM_TOTALS_PROPS};
-use super::snapshot::{InventorySnapshot, SheetSpec};
+use super::snapshot::{InventorySnapshot, RowSource, SheetSpec};
 use super::{Cell, Column, Table};
 use crate::vcenter::soap::ManagedObject;
 use crate::vcenter::VCenterConnection;
@@ -173,7 +173,7 @@ fn memory_tiering_type(host: &ManagedObject) -> Option<String> {
     (!types.is_empty()).then(|| types.join(" + "))
 }
 
-pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
+pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String> {
     // The per-host VM rollup used to be its own inventory walk. It now reads
     // the same VM list every other sheet in the fetch shares.
     let vm_totals = vm_totals_by_host(&snap.vms);
@@ -210,7 +210,7 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
             _ => None,
         };
 
-        rows.push(vec![
+        rows.push((host.moref.clone(), vec![
             Cell::Text(name),
             Cell::opt_text(host.str_prop("overallStatus")),
             Cell::opt_bool(host.bool_prop("runtime.inMaintenanceMode")),
@@ -265,7 +265,7 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
             Cell::opt_text(host.str_prop("hardware.biosInfo.biosVersion")),
             Cell::opt_text(host.str_prop("hardware.biosInfo.releaseDate")),
             Cell::opt_text(host.str_prop("summary.hardware.uuid")),
-        ]);
+        ]));
     }
 
     Ok(rows)
@@ -278,6 +278,7 @@ pub const SPEC: SheetSpec = SheetSpec {
     // rollup over VMs, so it declares both sets.
     vm_props: &[VM_TOTALS_PROPS],
     host_props: &[HOST_PROPS],
+    source: RowSource::Host,
     rows,
 };
 
@@ -291,7 +292,7 @@ pub async fn fetch_vhost_all(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::snapshot::test_support::{col, host, vm};
+    use crate::data::snapshot::test_support::{cells, col, host, vm};
 
     fn cell(rows: &[Vec<Cell>], row: usize, label: &str) -> Cell {
         rows[row][col(&columns(), label)].clone()
@@ -342,7 +343,7 @@ mod tests {
             )],
         );
 
-        let rows = rows(&snap).expect("rows build");
+        let rows = cells(rows(&snap).expect("rows build"));
         assert_eq!(rows.len(), 1);
         assert!(matches!(cell(&rows, 0, "# VMs total"), Cell::Number(v) if v == 2.0));
         assert!(matches!(cell(&rows, 0, "# VMs"), Cell::Number(v) if v == 1.0));
@@ -370,7 +371,7 @@ mod tests {
             vec![host("host-1", &[("name", "esx9-01.example.com")])],
         );
 
-        let rows = rows(&snap).expect("rows build");
+        let rows = cells(rows(&snap).expect("rows build"));
         assert!(matches!(cell(&rows, 0, "# VMs total"), Cell::Number(v) if v == 0.0));
     }
 
@@ -386,7 +387,7 @@ mod tests {
 #[cfg(test)]
 mod captured_tests {
     use super::*;
-    use crate::data::snapshot::test_support::{captured_snapshot, col};
+    use crate::data::snapshot::test_support::{captured_snapshot, cells, col};
 
     fn at(rows: &[Vec<Cell>], label: &str) -> Cell {
         rows[0][col(&columns(), label)].clone()
@@ -394,14 +395,14 @@ mod captured_tests {
 
     #[test]
     fn one_row_per_captured_host() {
-        let rows = rows(&captured_snapshot()).expect("captured host has a name");
+        let rows = cells(rows(&captured_snapshot()).expect("captured host has a name"));
         assert_eq!(rows.len(), 1);
         assert!(matches!(at(&rows, "Host"), Cell::Text(ref s) if s == "esx01.lab.local"));
     }
 
     #[test]
     fn hardware_columns_match_the_capture() {
-        let rows = rows(&captured_snapshot()).expect("named host");
+        let rows = cells(rows(&captured_snapshot()).expect("named host"));
         assert!(matches!(at(&rows, "Vendor"), Cell::Text(ref s) if s == "HPE"));
         assert!(matches!(at(&rows, "Model"), Cell::Text(ref s) if s == "ProLiant DL380 Gen10"));
         assert!(matches!(at(&rows, "# Cores"), Cell::Number(n) if n == 48.0));
@@ -416,7 +417,7 @@ mod captured_tests {
     /// its `key`, never by position.
     #[test]
     fn ntpd_state_is_read_from_the_service_array() {
-        let rows = rows(&captured_snapshot()).expect("named host");
+        let rows = cells(rows(&captured_snapshot()).expect("named host"));
         assert!(matches!(at(&rows, "NTPD running"), Cell::Bool(true)));
         assert!(matches!(at(&rows, "NTP Server(s)"), Cell::Text(ref s) if !s.is_empty()));
     }
@@ -425,7 +426,7 @@ mod captured_tests {
     /// empty by fact rather than by parse failure. See docs/LAB-ENVIRONMENT.md.
     #[test]
     fn a_dram_only_host_reports_no_nvme_tier() {
-        let rows = rows(&captured_snapshot()).expect("named host");
+        let rows = cells(rows(&captured_snapshot()).expect("named host"));
         assert!(matches!(at(&rows, "NVMe Tier GiB"), Cell::Empty));
     }
 
@@ -433,7 +434,7 @@ mod captured_tests {
     /// its rollup; the other three captures point at an absent host.
     #[test]
     fn vm_rollup_counts_only_vms_on_that_host() {
-        let rows = rows(&captured_snapshot()).expect("named host");
+        let rows = cells(rows(&captured_snapshot()).expect("named host"));
         assert!(matches!(at(&rows, "# VMs total"), Cell::Number(n) if n == 1.0));
     }
 }

@@ -141,14 +141,22 @@ impl SoapClient {
             .map(|_| ())
     }
 
-    async fn create_container_view(&self, obj_type: &str) -> Result<String, String> {
+    /// `<type>` repeats, so one view can span several managed-object types.
+    /// Verified against the lab: a view over Folder + Datacenter +
+    /// ComputeResource returns all three, and a `ComputeResource` view also
+    /// yields `ClusterComputeResource`, which is its subclass.
+    async fn create_container_view(&self, obj_types: &[&str]) -> Result<String, String> {
+        let types: String = obj_types
+            .iter()
+            .map(|t| format!("<vim25:type>{}</vim25:type>", xml_escape(t)))
+            .collect();
         let body = format!(
-            r#"<vim25:CreateContainerView><vim25:_this type="ViewManager">ViewManager</vim25:_this><vim25:container type="Folder">group-d1</vim25:container><vim25:type>{obj_type}</vim25:type><vim25:recursive>true</vim25:recursive></vim25:CreateContainerView>"#
+            r#"<vim25:CreateContainerView><vim25:_this type="ViewManager">ViewManager</vim25:_this><vim25:container type="Folder">group-d1</vim25:container>{types}<vim25:recursive>true</vim25:recursive></vim25:CreateContainerView>"#
         );
         let body = self.call(&body).await?;
         body.find("returnval")
             .map(|e| e.text.clone())
-            .ok_or_else(|| format!("CreateContainerView for {obj_type} returned no view"))
+            .ok_or_else(|| format!("CreateContainerView for {obj_types:?} returned no view"))
     }
 
     async fn destroy_view(&self, view: &str) -> Result<(), String> {
@@ -169,18 +177,32 @@ impl SoapClient {
         obj_type: &str,
         props: &[&str],
     ) -> Result<Vec<ManagedObject>, String> {
-        let view = self.create_container_view(obj_type).await?;
-        let result = self.retrieve_with_view(obj_type, props, &view).await;
+        self.retrieve_types(&[obj_type], props).await
+    }
+
+    /// Retrieve the same `props` for every object of any type in `obj_types`.
+    ///
+    /// One view and one `RetrievePropertiesEx` covers the lot, which is what
+    /// keeps the inventory path index down to a single extra walk instead of
+    /// one per type. Each type needs its own `propSet` entry even though the
+    /// property list is shared.
+    pub async fn retrieve_types(
+        &self,
+        obj_types: &[&str],
+        props: &[&str],
+    ) -> Result<Vec<ManagedObject>, String> {
+        let view = self.create_container_view(obj_types).await?;
+        let result = self.retrieve_with_view(obj_types, props, &view).await;
         // Views accumulate on the session until logout; drop it either way.
         if let Err(e) = self.destroy_view(&view).await {
-            eprintln!("warning: could not destroy {obj_type} container view: {e}");
+            eprintln!("warning: could not destroy {obj_types:?} container view: {e}");
         }
         result
     }
 
     async fn retrieve_with_view(
         &self,
-        obj_type: &str,
+        obj_types: &[&str],
         props: &[&str],
         view: &str,
     ) -> Result<Vec<ManagedObject>, String> {
@@ -188,9 +210,18 @@ impl SoapClient {
             .iter()
             .map(|p| format!("<vim25:pathSet>{}</vim25:pathSet>", xml_escape(p)))
             .collect();
+        let prop_sets: String = obj_types
+            .iter()
+            .map(|t| {
+                format!(
+                    "<vim25:propSet><vim25:type>{}</vim25:type>{path_set}</vim25:propSet>",
+                    xml_escape(t)
+                )
+            })
+            .collect();
 
         let body = format!(
-            r#"<vim25:RetrievePropertiesEx><vim25:_this type="PropertyCollector">propertyCollector</vim25:_this><vim25:specSet><vim25:propSet><vim25:type>{obj_type}</vim25:type>{path_set}</vim25:propSet><vim25:objectSet><vim25:obj type="ContainerView">{view}</vim25:obj><vim25:skip>true</vim25:skip><vim25:selectSet xsi:type="vim25:TraversalSpec"><vim25:name>view</vim25:name><vim25:type>ContainerView</vim25:type><vim25:path>view</vim25:path><vim25:skip>false</vim25:skip></vim25:selectSet></vim25:objectSet></vim25:specSet><vim25:options/></vim25:RetrievePropertiesEx>"#
+            r#"<vim25:RetrievePropertiesEx><vim25:_this type="PropertyCollector">propertyCollector</vim25:_this><vim25:specSet>{prop_sets}<vim25:objectSet><vim25:obj type="ContainerView">{view}</vim25:obj><vim25:skip>true</vim25:skip><vim25:selectSet xsi:type="vim25:TraversalSpec"><vim25:name>view</vim25:name><vim25:type>ContainerView</vim25:type><vim25:path>view</vim25:path><vim25:skip>false</vim25:skip></vim25:selectSet></vim25:objectSet></vim25:specSet><vim25:options/></vim25:RetrievePropertiesEx>"#
         );
 
         let mut out = Vec::new();
@@ -268,6 +299,21 @@ impl ManagedObject {
             "false" | "0" => Some(false),
             _ => None,
         }
+    }
+
+    /// A moref-valued property as (moref, declared managed-object type).
+    ///
+    /// vim25 sends `<val type="Datacenter" xsi:type="ManagedObjectReference">`:
+    /// `xsi:type` only says "this is a reference", while the plain `type`
+    /// attribute carries the actual type. Walking a `parent` chain needs the
+    /// latter, and reading it beats inferring a type from the moref prefix.
+    pub fn moref_prop(&self, name: &str) -> Option<(String, String)> {
+        let el = self.prop(name)?;
+        let moref = el.text.clone();
+        if moref.is_empty() {
+            return None;
+        }
+        Some((moref, el.attr("type").unwrap_or_default().to_string()))
     }
 
     /// Members of an array-valued property.

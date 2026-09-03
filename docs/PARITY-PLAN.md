@@ -91,7 +91,7 @@ Two consequences beyond speed:
 |---|---|---|---|
 | `InventorySnapshot` and sheets as pure functions over it | Sets the marginal cost of the remaining 21 sheets | L | **Done** |
 | Test harness for sheets without a vCenter | Every later sheet ships with a parse test instead of a live-only check | M | **Done** |
-| Inventory path index: Datacenter, Cluster, Folder | Cross-cutting columns on ~20 sheets, appended generically the way `VI SDK Server` already is (`data/mod.rs`). Needs `parent` walks over `Folder`, `Datacenter`, `ComputeResource`, `ClusterComputeResource`, which is a different query shape than the flat reads used so far | M | Not started (lab now available) |
+| Inventory path index: Datacenter, Cluster, Folder | Cross-cutting columns on ~20 sheets, appended generically the way `VI SDK Server` already is (`data/mod.rs`). Needs `parent` walks over `Folder`, `Datacenter`, `ComputeResource`, `ClusterComputeResource`, which is a different query shape than the flat reads used so far | M | **Done** |
 | Real captured XML fixtures per object type | Replaces the hand-written fragments the tests use today with real responses | M | **Done** |
 
 Phase 0 adds no sheets. It is still the right first move: the path index alone
@@ -116,7 +116,7 @@ pub struct SheetSpec {
 
 Consequences:
 
-- **Inventory walks per export dropped from 10 to 2.** One `VirtualMachine`
+- **Inventory walks per export dropped from 10 to 3.** One `VirtualMachine`
   retrieve and one `HostSystem` retrieve now serve all five sheets. Adding the
   seven Phase 1 sheets adds zero walks: they widen the same property union.
 - **`data::SHEETS` is the single registry.** `list_sheets`, `fetch_sheet` and the
@@ -165,6 +165,46 @@ seen were such VMs, never a value difference on a VM present in both runs.
 
 Still unverified: the GUI itself has not been run on Windows — the fetch and
 export paths were driven through the library API, not the Tauri window.
+
+### Inventory path index, 2026-09-03
+
+`Datacenter`, `Cluster` and `Folder` are now appended generically, the way
+`VI SDK Server` already was, so the ~20 sheets still to be written inherit them
+for free.
+
+The query shape was confirmed live before any property path was written.
+`parent` comes back as
+`<val type="Folder" xsi:type="ManagedObjectReference">group-v4</val>` — `xsi:type`
+only says "this is a reference", while the plain `type` attribute carries the
+managed-object type the walk needs. Reading that beats inferring a type from the
+moref prefix, which would work right up until it did not.
+
+Two facts made this cheaper than the plan assumed:
+
+- **`CreateContainerView` takes a repeating `<type>`,** and one
+  `RetrievePropertiesEx` can carry one `propSet` per type against that single
+  view. Folder + Datacenter + ComputeResource therefore cost **one** walk, not
+  three. Measured: a full five-sheet export now does **3** walks (HostSystem,
+  VirtualMachine, containers), up from 2.
+- **A `ComputeResource` view also returns `ClusterComputeResource`,** its
+  subclass, so clusters need no separate query.
+
+The tree is not uniform, and the code follows it rather than flattening it: a VM
+reaches its **folder** through `parent`, but its **cluster** through
+`runtime.host` → the host's `parent`, because folders and compute live in
+separate branches of the inventory. A host outside a cluster still has a
+`ComputeResource` parent, but that is a container vSphere invents rather than a
+cluster anyone named, so `Cluster` is left empty rather than inventing one.
+
+Column placement follows RVTools rather than being applied uniformly: VM sheets
+get Datacenter, Cluster and Folder; vHost gets Datacenter and Cluster but no
+Folder, since a host's folder is the datacenter's `host` folder that RVTools
+does not show; vHealth gets none, being three columns wide. `SheetSpec` declares
+which via `RowSource`, and `Table::extend_from` does the work once.
+
+Verified live: all three columns populate on every row (161 vInfo, 345 vDisk,
+3 vSnapshot, 3 vHost), with real folder names — `vSpherePods`, `vm`,
+`vcf-management-services`, `ESX Agents` — and row counts unchanged.
 
 ### Captured fixtures, 2026-09-03
 

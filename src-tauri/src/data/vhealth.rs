@@ -17,7 +17,7 @@
 //!   distinguishes those VMs from the rest. Guessing a trigger would produce
 //!   findings that are confidently wrong, which is worse than a missing check.
 
-use super::snapshot::{InventorySnapshot, SheetSpec};
+use super::snapshot::{InventorySnapshot, RowSource, SheetSpec};
 use super::{Cell, Column, Table};
 use crate::vcenter::soap::ManagedObject;
 use crate::vcenter::xml::Element;
@@ -46,12 +46,17 @@ pub fn columns() -> Vec<Column> {
     ]
 }
 
-fn row(name: &str, message: String, kind: &str) -> Vec<Cell> {
-    vec![
-        Cell::Text(name.to_string()),
-        Cell::Text(message),
-        Cell::Text(kind.to_string()),
-    ]
+/// vHealth shows no location columns, but rows still carry their source moref
+/// so the sheet contract is uniform across every sheet.
+fn row(moref: &str, name: &str, message: String, kind: &str) -> (String, Vec<Cell>) {
+    (
+        moref.to_string(),
+        vec![
+            Cell::Text(name.to_string()),
+            Cell::Text(message),
+            Cell::Text(kind.to_string()),
+        ],
+    )
 }
 
 /// The folder component of `[datastore] folder/name.vmx`.
@@ -82,14 +87,17 @@ fn walk_snapshots(node: &Element, out: &mut Vec<(String, String)>) {
     }
 }
 
-fn host_findings(host: &ManagedObject, rows: &mut Vec<Vec<Cell>>) -> Result<(), String> {
+fn host_findings(
+    host: &ManagedObject,
+    rows: &mut Vec<(String, Vec<Cell>)>,
+) -> Result<(), String> {
     let Some(name) = host.str_prop("name") else {
         return Err(format!("HostSystem {} returned no name property", host.moref));
     };
 
     let ntp_servers: Vec<&Element> = host.array_prop("config.dateTimeInfo.ntpConfig.server");
     if ntp_servers.iter().all(|s| s.text.is_empty()) {
-        rows.push(row(&name, "NTP Server value is null!".into(), "NTP"));
+        rows.push(row(&host.moref, &name, "NTP Server value is null!".into(), "NTP"));
     }
 
     let ntpd_running = host
@@ -101,13 +109,16 @@ fn host_findings(host: &ManagedObject, rows: &mut Vec<Vec<Cell>>) -> Result<(), 
         // A host that does not report the service at all is not running it.
         .unwrap_or(false);
     if !ntpd_running {
-        rows.push(row(&name, "NTPD service is not running!".into(), "NTPD"));
+        rows.push(row(&host.moref, &name, "NTPD service is not running!".into(), "NTPD"));
     }
 
     Ok(())
 }
 
-fn vm_findings(vm: &ManagedObject, rows: &mut Vec<Vec<Cell>>) -> Result<(), String> {
+fn vm_findings(
+    vm: &ManagedObject,
+    rows: &mut Vec<(String, Vec<Cell>)>,
+) -> Result<(), String> {
     let Some(name) = vm.str_prop("name") else {
         return Err(format!("VirtualMachine {} returned no name property", vm.moref));
     };
@@ -120,6 +131,7 @@ fn vm_findings(vm: &ManagedObject, rows: &mut Vec<Vec<Cell>>) -> Result<(), Stri
     if let Some(folder) = vm.str_prop("config.files.vmPathName").as_deref().and_then(folder_of) {
         if folder != name {
             rows.push(row(
+                &vm.moref,
                 &name,
                 format!("Inconsistent Foldername! VMname = {name} Foldername = {folder}"),
                 "Foldername",
@@ -138,6 +150,7 @@ fn vm_findings(vm: &ManagedObject, rows: &mut Vec<Vec<Cell>>) -> Result<(), Stri
         if cdrom.text_at("connectable/connected").as_deref() == Some("true") {
             let label = cdrom.text_at("deviceInfo/label").unwrap_or_default();
             rows.push(row(
+                &vm.moref,
                 &name,
                 format!("VM has a CDROM device connected! {label}"),
                 "CDROM",
@@ -151,6 +164,7 @@ fn vm_findings(vm: &ManagedObject, rows: &mut Vec<Vec<Cell>>) -> Result<(), Stri
     }
     for (snap_name, created) in snapshots {
         rows.push(row(
+            &vm.moref,
             &name,
             format!(
                 "VM has an active snapshot! {snap_name} created on {}",
@@ -164,7 +178,7 @@ fn vm_findings(vm: &ManagedObject, rows: &mut Vec<Vec<Cell>>) -> Result<(), Stri
 }
 
 /// Hosts first, then VMs — the order RVTools emits its own checks in.
-pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
+pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String> {
     let mut rows = Vec::new();
 
     for host in &snap.hosts {
@@ -182,6 +196,9 @@ pub const SPEC: SheetSpec = SheetSpec {
     columns,
     vm_props: &[VM_PROPS],
     host_props: &[HOST_PROPS],
+    // RVTools' vHealth is three columns wide: Name, Message, Message type.
+    // It gets no location columns.
+    source: RowSource::None,
     rows,
 };
 
@@ -210,9 +227,9 @@ mod tests {
         format!("<propSet><name>{name}</name><val>{val}</val></propSet>")
     }
 
-    fn messages(rows: &[Vec<Cell>]) -> Vec<(String, String)> {
+    fn messages(rows: &[(String, Vec<Cell>)]) -> Vec<(String, String)> {
         rows.iter()
-            .map(|r| match (&r[1], &r[2]) {
+            .map(|(_, r)| match (&r[1], &r[2]) {
                 (Cell::Text(m), Cell::Text(t)) => (t.clone(), m.clone()),
                 _ => panic!("message and type are always text"),
             })
@@ -369,7 +386,7 @@ mod tests {
 #[cfg(test)]
 mod captured_tests {
     use super::*;
-    use crate::data::snapshot::test_support::captured_snapshot;
+    use crate::data::snapshot::test_support::{captured_snapshot, cells};
 
     fn findings(rows: &[Vec<Cell>]) -> Vec<(String, String)> {
         rows.iter()
@@ -384,7 +401,7 @@ mod captured_tests {
     /// finding comes from a VM.
     #[test]
     fn a_healthy_captured_host_contributes_no_findings() {
-        let rows = rows(&captured_snapshot()).expect("named objects");
+        let rows = cells(rows(&captured_snapshot()).expect("named objects"));
         let f = findings(&rows);
         assert!(
             !f.iter().any(|(kind, _)| kind == "NTP" || kind == "NTPD"),
@@ -397,7 +414,7 @@ mod captured_tests {
     /// reproduced faithfully, not a defect. See docs/LAB-ENVIRONMENT.md.
     #[test]
     fn vsan_uuid_folders_trip_foldername_for_every_vm() {
-        let rows = rows(&captured_snapshot()).expect("named objects");
+        let rows = cells(rows(&captured_snapshot()).expect("named objects"));
         let folder: Vec<_> = findings(&rows)
             .into_iter()
             .filter(|(kind, _)| kind == "Foldername")
@@ -411,7 +428,7 @@ mod captured_tests {
     /// too.
     #[test]
     fn only_the_connected_cdrom_is_reported() {
-        let rows = rows(&captured_snapshot()).expect("named objects");
+        let rows = cells(rows(&captured_snapshot()).expect("named objects"));
         let cd: Vec<_> = findings(&rows).into_iter().filter(|(k, _)| k == "CDROM").collect();
         assert_eq!(cd.len(), 1, "got {cd:?}");
         assert_eq!(cd[0].1, "k8s-controller-01");
@@ -419,7 +436,7 @@ mod captured_tests {
 
     #[test]
     fn the_captured_snapshot_is_reported_once() {
-        let rows = rows(&captured_snapshot()).expect("named objects");
+        let rows = cells(rows(&captured_snapshot()).expect("named objects"));
         let snaps: Vec<_> =
             findings(&rows).into_iter().filter(|(k, _)| k == "Snapshot").collect();
         assert_eq!(snaps.len(), 1, "got {snaps:?}");
@@ -429,7 +446,7 @@ mod captured_tests {
     /// 4 Foldername + 1 CDROM + 1 Snapshot, and nothing from the host.
     #[test]
     fn total_findings_for_the_capture() {
-        let rows = rows(&captured_snapshot()).expect("named objects");
+        let rows = cells(rows(&captured_snapshot()).expect("named objects"));
         assert_eq!(rows.len(), 6);
     }
 }

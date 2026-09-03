@@ -17,6 +17,86 @@ use crate::vcenter::soap::ManagedObject;
 use crate::vcenter::{Session, SessionCache, VCenterConnection};
 use std::collections::HashMap;
 
+/// What a sheet's rows are *about*, which decides the location columns it gets.
+///
+/// RVTools is not uniform here: VM sheets carry Datacenter, Cluster and Folder;
+/// vHost carries Datacenter and Cluster but no Folder, because a host's folder
+/// is the datacenter's `host` folder and RVTools does not show it; vHealth
+/// carries none, being three columns wide.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowSource {
+    Vm,
+    Host,
+    /// Rows that describe no single inventory object, or a sheet RVTools gives
+    /// no location columns.
+    None,
+}
+
+/// One node of the inventory tree: its name and the parent it hangs off.
+struct PathNode {
+    name: String,
+    /// `(moref, declared managed-object type)`. `None` at the root folder.
+    parent: Option<(String, String)>,
+    /// For a VM, the `HostSystem` it runs on. A VM reaches its cluster through
+    /// its host, not through its folder: folders and compute live in separate
+    /// branches of the inventory tree.
+    host: Option<String>,
+}
+
+/// Resolves an object's Datacenter, Cluster and Folder by walking `parent`.
+///
+/// Built from one extra inventory walk over Folder + Datacenter +
+/// ComputeResource (a `ComputeResource` view also returns its
+/// `ClusterComputeResource` subclass, verified against the lab), plus the
+/// `parent` property already carried on each VM and host. Three columns on
+/// roughly twenty eventual sheets for one round trip.
+#[derive(Default)]
+pub struct PathIndex {
+    nodes: HashMap<String, PathNode>,
+}
+
+impl PathIndex {
+    /// Walk up from `moref` until a `Datacenter` is reached.
+    ///
+    /// The chain is bounded by `nodes.len()` rather than trusted to terminate:
+    /// a cycle in inventory data would otherwise hang the export.
+    pub fn datacenter_of(&self, moref: &str) -> Option<String> {
+        let mut at = moref.to_string();
+        for _ in 0..=self.nodes.len() {
+            let node = self.nodes.get(&at)?;
+            let (parent, kind) = node.parent.as_ref()?;
+            if kind == "Datacenter" {
+                return self.nodes.get(parent).map(|n| n.name.clone());
+            }
+            at = parent.clone();
+        }
+        None
+    }
+
+    /// The name of the folder a VM sits in directly.
+    pub fn folder_of(&self, vm_moref: &str) -> Option<String> {
+        let (parent, kind) = self.nodes.get(vm_moref)?.parent.as_ref()?;
+        (kind == "Folder").then(|| self.nodes.get(parent).map(|n| n.name.clone()))?
+    }
+
+    /// A host's cluster, or `None` for a standalone host.
+    ///
+    /// A host outside a cluster still has a `ComputeResource` parent, but that
+    /// is a container vSphere invents rather than a cluster anyone named, so
+    /// reporting it would invent a cluster that does not exist.
+    pub fn cluster_of_host(&self, host_moref: &str) -> Option<String> {
+        let (parent, kind) = self.nodes.get(host_moref)?.parent.as_ref()?;
+        (kind == "ClusterComputeResource")
+            .then(|| self.nodes.get(parent).map(|n| n.name.clone()))?
+    }
+
+    /// A VM's cluster, reached through the host it runs on.
+    pub fn cluster_of_vm(&self, vm_moref: &str) -> Option<String> {
+        let host = self.nodes.get(vm_moref)?.host.as_ref()?;
+        self.cluster_of_host(host)
+    }
+}
+
 /// What one vCenter returned for a fetch.
 pub struct InventorySnapshot {
     /// The `VI SDK Server` value for rows built from this snapshot.
@@ -26,6 +106,8 @@ pub struct InventorySnapshot {
     /// `HostSystem` moref → host name, for resolving `runtime.host`. Derived
     /// from `hosts`, so it costs no extra round trip.
     pub host_names: HashMap<String, String>,
+    /// Datacenter / Cluster / Folder lookups.
+    pub paths: PathIndex,
 }
 
 impl InventorySnapshot {
@@ -40,10 +122,17 @@ impl InventorySnapshot {
         // Every VM-derived sheet resolves `runtime.host` to a host name, so a
         // VM fetch always implies at least the hosts' names. This is the walk
         // `common::host_names` used to do on its own.
+        // `parent` is what the inventory path index walks, and the location
+        // columns are appended to every sheet, so it is never optional.
         let host_props: Vec<&'static str> = if vm_props.is_empty() {
-            host_props.to_vec()
+            union(&[host_props, &["parent"]])
         } else {
-            union(&[host_props, &["name"]])
+            union(&[host_props, &["name", "parent"]])
+        };
+        let vm_props: Vec<&'static str> = if vm_props.is_empty() {
+            Vec::new()
+        } else {
+            union(&[vm_props, &["parent", "runtime.host"]])
         };
 
         let hosts = if host_props.is_empty() {
@@ -55,25 +144,87 @@ impl InventorySnapshot {
         let vms = if vm_props.is_empty() {
             Vec::new()
         } else {
-            session.soap.retrieve("VirtualMachine", vm_props).await?
+            session.soap.retrieve("VirtualMachine", &vm_props).await?
         };
+
+        // One walk covers all three container types; a ComputeResource view
+        // also returns ClusterComputeResource, its subclass.
+        let containers = session
+            .soap
+            .retrieve_types(&["Folder", "Datacenter", "ComputeResource"], &["name", "parent"])
+            .await?;
 
         let host_names = hosts
             .iter()
             .filter_map(|h| h.str_prop("name").map(|n| (h.moref.clone(), n)))
             .collect();
+        let paths = PathIndex::build(&containers, &vms, &hosts);
 
-        Ok(Self { server: server.to_string(), vms, hosts, host_names })
+        Ok(Self { server: server.to_string(), vms, hosts, host_names, paths })
     }
 
     /// A snapshot assembled by hand, for tests that have captured XML but no
     /// vCenter to fetch from.
     pub fn from_parts(vms: Vec<ManagedObject>, hosts: Vec<ManagedObject>) -> Self {
+        Self::from_parts_with_containers(vms, hosts, Vec::new())
+    }
+
+    /// As `from_parts`, plus the Folder / Datacenter / ComputeResource objects
+    /// the path index is built from.
+    pub fn from_parts_with_containers(
+        vms: Vec<ManagedObject>,
+        hosts: Vec<ManagedObject>,
+        containers: Vec<ManagedObject>,
+    ) -> Self {
         let host_names = hosts
             .iter()
             .filter_map(|h| h.str_prop("name").map(|n| (h.moref.clone(), n)))
             .collect();
-        Self { server: "test".into(), vms, hosts, host_names }
+        let paths = PathIndex::build(&containers, &vms, &hosts);
+        Self { server: "test".into(), vms, hosts, host_names, paths }
+    }
+}
+
+impl PathIndex {
+    /// Containers supply the tree; VMs and hosts hang off it via their own
+    /// `parent`, which their sheets already fetch.
+    fn build(
+        containers: &[ManagedObject],
+        vms: &[ManagedObject],
+        hosts: &[ManagedObject],
+    ) -> Self {
+        let mut nodes = HashMap::new();
+        for c in containers {
+            nodes.insert(
+                c.moref.clone(),
+                PathNode {
+                    name: c.str_prop("name").unwrap_or_default(),
+                    parent: c.moref_prop("parent"),
+                    host: None,
+                },
+            );
+        }
+        for h in hosts {
+            nodes.insert(
+                h.moref.clone(),
+                PathNode {
+                    name: h.str_prop("name").unwrap_or_default(),
+                    parent: h.moref_prop("parent"),
+                    host: None,
+                },
+            );
+        }
+        for vm in vms {
+            nodes.insert(
+                vm.moref.clone(),
+                PathNode {
+                    name: vm.str_prop("name").unwrap_or_default(),
+                    parent: vm.moref_prop("parent"),
+                    host: vm.str_prop("runtime.host"),
+                },
+            );
+        }
+        Self { nodes }
     }
 }
 
@@ -107,8 +258,14 @@ pub struct SheetSpec {
     pub vm_props: &'static [&'static [&'static str]],
     /// `HostSystem` property sets this sheet reads. Empty reads nothing.
     pub host_props: &'static [&'static [&'static str]],
+    /// What each row describes, which decides its location columns.
+    pub source: RowSource,
     /// Pure by design: all I/O happened when the snapshot was built.
-    pub rows: fn(&InventorySnapshot) -> Result<Vec<Vec<Cell>>, String>,
+    ///
+    /// Each row is paired with the moref of the object it describes, so
+    /// Datacenter / Cluster / Folder are resolved once in `Table::extend_from`
+    /// rather than in every sheet.
+    pub rows: fn(&InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String>,
 }
 
 /// Build every sheet in `specs` from one snapshot per vCenter.
@@ -131,7 +288,11 @@ pub async fn fetch_tables(
 
     let mut tables: Vec<Table> = specs
         .iter()
-        .map(|s| Table::new(s.name, (s.columns)()).with_source_column())
+        .map(|s| {
+            Table::new(s.name, (s.columns)())
+                .with_location_columns(s.source)
+                .with_source_column()
+        })
         .collect();
 
     for conn in conns {
@@ -156,7 +317,7 @@ pub async fn fetch_tables(
 
         for (spec, table) in specs.iter().zip(tables.iter_mut()) {
             match (spec.rows)(&snapshot) {
-                Ok(rows) => table.extend_from(&label, rows),
+                Ok(rows) => table.extend_from(&label, rows, spec.source, &snapshot.paths),
                 Err(e) => table.warnings.push(format!("{label}: {e}")),
             }
         }
@@ -233,10 +394,22 @@ pub mod test_support {
     pub const VM_TEMPLATE: &str = include_str!("fixtures/vm_template.xml");
     /// A host with all 40 properties vHost and vHealth read.
     pub const HOST_FULL: &str = include_str!("fixtures/host_full.xml");
+    /// The Folder / Datacenter / ClusterComputeResource chain the VM and host
+    /// captures hang off: every ancestor up to the datacenter, so the path walk
+    /// is exercised over a complete tree rather than a stub.
+    pub const CONTAINERS: &str = include_str!("fixtures/containers.xml");
 
     /// Parse one captured `<objects>` element.
     pub fn captured(xml: &str) -> ManagedObject {
         ManagedObject::from_element(&xml::parse(xml).expect("captured fixture parses"))
+    }
+
+    /// Parse a capture holding several `<objects>` elements under one root.
+    pub fn captured_many(xml: &str) -> Vec<ManagedObject> {
+        let root = xml::parse(xml).expect("captured fixture parses");
+        root.children_named("objects")
+            .map(ManagedObject::from_element)
+            .collect()
     }
 
     /// A snapshot assembled from the real captures: four VMs and one host.
@@ -246,7 +419,7 @@ pub mod test_support {
     /// unresolved-moref fallback is exercised by real data rather than by a
     /// contrived moref.
     pub fn captured_snapshot() -> InventorySnapshot {
-        InventorySnapshot::from_parts(
+        InventorySnapshot::from_parts_with_containers(
             vec![
                 captured(VM_MULTI_DISK),
                 captured(VM_SNAPSHOTS),
@@ -254,7 +427,17 @@ pub mod test_support {
                 captured(VM_TEMPLATE),
             ],
             vec![captured(HOST_FULL)],
+            captured_many(CONTAINERS),
         )
+    }
+
+    /// Drop the source moref from a sheet's rows.
+    ///
+    /// `SheetSpec::rows` pairs every row with the moref of the object it
+    /// describes so `Table::extend_from` can resolve Datacenter / Cluster /
+    /// Folder in one place. Tests that only care about cell values strip it.
+    pub fn cells(rows: Vec<(String, Vec<Cell>)>) -> Vec<Vec<Cell>> {
+        rows.into_iter().map(|(_, cells)| cells).collect()
     }
 
     /// Index of a column by its RVTools label, so tests never hard-code a
@@ -307,6 +490,63 @@ mod tests {
         assert_eq!(snap.host_names.get("host-1").map(String::as_str), Some("esx1.example.com"));
         assert_eq!(snap.host_names.get("host-2").map(String::as_str), Some("esx2.example.com"));
         assert_eq!(snap.host_names.len(), 2);
+    }
+
+    /// The path index walked over the captured inventory tree.
+    ///
+    /// vim25 gives `parent` as `<val type="Folder" xsi:type="ManagedObjectReference">`:
+    /// `xsi:type` only says "this is a reference", so the walk reads the plain
+    /// `type` attribute. Inferring the type from the moref prefix would work
+    /// until it did not.
+    #[test]
+    fn a_vm_resolves_its_datacenter_by_walking_parent_folders() {
+        let snap = test_support::captured_snapshot();
+        // appliance01 sits directly in the datacenter's "vm" folder.
+        let vm = test_support::captured(test_support::VM_MULTI_DISK);
+        assert_eq!(snap.paths.datacenter_of(&vm.moref).as_deref(), Some("datacenter01"));
+        assert_eq!(snap.paths.folder_of(&vm.moref).as_deref(), Some("vm"));
+    }
+
+    /// More than one hop: this VM is in a folder nested under "vm".
+    #[test]
+    fn a_nested_folder_still_reaches_the_datacenter() {
+        let snap = test_support::captured_snapshot();
+        let vm = test_support::captured(test_support::VM_SNAPSHOTS);
+        assert_eq!(snap.paths.folder_of(&vm.moref).as_deref(), Some("ESX Agents"));
+        assert_eq!(snap.paths.datacenter_of(&vm.moref).as_deref(), Some("datacenter01"));
+    }
+
+    /// A host reaches its datacenter through cluster -> host folder ->
+    /// datacenter, a different branch of the tree than a VM's folder path.
+    #[test]
+    fn a_host_resolves_its_cluster_and_datacenter() {
+        let snap = test_support::captured_snapshot();
+        let host = test_support::captured(test_support::HOST_FULL);
+        assert_eq!(snap.paths.cluster_of_host(&host.moref).as_deref(), Some("cluster01"));
+        assert_eq!(snap.paths.datacenter_of(&host.moref).as_deref(), Some("datacenter01"));
+    }
+
+    /// A VM reaches its cluster through the host it runs on, not through its
+    /// folder. Only one captured VM is on the captured host; the others name a
+    /// host absent from the corpus and must report nothing rather than guess.
+    #[test]
+    fn a_vm_reaches_its_cluster_through_its_host() {
+        let snap = test_support::captured_snapshot();
+        let on_host = test_support::captured(test_support::VM_SNAPSHOTS);
+        assert_eq!(snap.paths.cluster_of_vm(&on_host.moref).as_deref(), Some("cluster01"));
+
+        let elsewhere = test_support::captured(test_support::VM_MULTI_DISK);
+        assert_eq!(snap.paths.cluster_of_vm(&elsewhere.moref), None);
+    }
+
+    /// An unknown moref yields nothing rather than panicking or inventing a
+    /// location.
+    #[test]
+    fn an_unknown_moref_has_no_location() {
+        let snap = test_support::captured_snapshot();
+        assert_eq!(snap.paths.datacenter_of("vm-does-not-exist"), None);
+        assert_eq!(snap.paths.folder_of("vm-does-not-exist"), None);
+        assert_eq!(snap.paths.cluster_of_host("host-does-not-exist"), None);
     }
 
     /// The union is what decides how many properties one export asks for. If a
