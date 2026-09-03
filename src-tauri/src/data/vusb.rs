@@ -3,24 +3,20 @@
 //! Reads `config.hardware.device` from the shared VM snapshot, so it adds no
 //! inventory walk.
 //!
-//! # This sheet is not verified against live data
+//! Controllers are not USB devices and are deliberately not rows: RVTools' vUSB
+//! inventories attached devices, and listing every `VirtualUSBController` would
+//! put a row on each VM that merely has a USB bus.
 //!
-//! The lab has USB *controllers* (`VirtualUSBController` ×10,
-//! `VirtualUSBXHCIController` ×3) but **no `VirtualUSB` devices at all**, so
-//! this sheet produces zero rows there and its parsing has never run against a
-//! real response. Controllers are not USB devices and are deliberately not
-//! rows: RVTools' vUSB inventories attached devices, and listing controllers
-//! would inflate the sheet with things nobody plugged in.
+//! The lab originally had controllers but no `VirtualUSB` at all, so this sheet
+//! had nothing to parse. A VM carrying one was created for the purpose
+//! (`sttools-fixture-01`, see `docs/LAB-ENVIRONMENT.md`), and the columns below
+//! are what a real device actually returned.
 //!
-//! Because of that, the columns here are restricted to fields carried by the
-//! `VirtualDevice` base type, which *is* verified live across CD-ROM, floppy,
-//! disk and NIC devices in this same array: `key`, `deviceInfo/label`,
-//! `deviceInfo/summary`, `connectable/*`, `controllerKey` and `unitNumber`.
-//!
-//! RVTools' `Family`, `Speed`, `EHCI enabled` and `Auto connect` are **not**
-//! implemented. They live on `VirtualUSB` itself, and no response containing
-//! one has been observed. Writing those paths would break the project's first
-//! ground rule and would most likely ship silently empty columns.
+//! RVTools' `Family`, `Speed`, `EHCI enabled` and `Auto connect` are still
+//! **not** implemented: the captured device carries `vendor`, `product`,
+//! `connected`, `controllerKey` and `unitNumber`, but none of those four. They
+//! appear to require a device that is actually attached and connected, which
+//! this one is not, so writing those paths would still be guesswork.
 
 use super::common::{VmContext, VM_CONTEXT_PROPS};
 use super::snapshot::{InventorySnapshot, RowSource, SheetSpec};
@@ -73,7 +69,15 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String
                     Cell::opt_bool(ctx.template),
                     Cell::opt_text(usb.text_at("deviceInfo/label")),
                     Cell::opt_text(usb.child("backing").and_then(|b| b.xsi_type.clone())),
-                    Cell::opt_bool(usb.text_at("connectable/connected").map(|v| v == "true")),
+                    // A VirtualUSB carries `connected` directly on the device,
+                    // not inside a `connectable` block the way CD-ROMs and NICs
+                    // do. Reading `connectable/connected` here silently yields
+                    // an empty cell; the captured device is what showed that.
+                    Cell::opt_bool(
+                        usb.text_at("connected")
+                            .or_else(|| usb.text_at("connectable/connected"))
+                            .map(|v| v == "true"),
+                    ),
                     Cell::opt_num(
                         usb.text_at("unitNumber").and_then(|v| v.parse::<f64>().ok()),
                     ),
@@ -107,18 +111,40 @@ pub async fn fetch_vusb_all(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::snapshot::test_support::{captured_snapshot, cells};
-    use crate::data::snapshot::InventorySnapshot;
-    use crate::vcenter::soap::ManagedObject;
-    use crate::vcenter::xml;
+    use crate::data::snapshot::test_support::{captured_snapshot, cells, col};
 
-    /// No `VirtualUSB` device exists in the lab, so the captured corpus yields
-    /// nothing. Asserted rather than assumed, so that if a capture ever does
-    /// contain one this test says so.
+    /// The corpus carries exactly one `VirtualUSB`, on the VM built for it.
     #[test]
-    fn the_captured_corpus_has_no_usb_devices() {
+    fn a_captured_usb_device_becomes_a_row() {
         let rows = cells(rows(&captured_snapshot()).expect("named VMs"));
-        assert!(rows.is_empty());
+        assert_eq!(rows.len(), 1);
+        let at = |l: &str| rows[0][col(&columns(), l)].clone();
+        assert!(matches!(at("VM"), Cell::Text(ref s) if s == "sttools-fixture-01"));
+        assert!(matches!(at("Device Node"), Cell::Text(ref s) if s.starts_with("USB")));
+        assert!(
+            matches!(at("Device Type"), Cell::Text(ref s) if s == "VirtualUSBRemoteHostBackingInfo")
+        );
+        assert!(matches!(at("Connected"), Cell::Bool(false)));
+    }
+
+    /// The same VM has a USB *controller* alongside the device. Only the device
+    /// is a row: a controller is a bus, not something anyone plugged in.
+    #[test]
+    fn the_controller_on_that_vm_is_not_also_a_row() {
+        let snap = captured_snapshot();
+        let vm = snap
+            .vms
+            .iter()
+            .find(|v| v.str_prop("name").as_deref() == Some("sttools-fixture-01"))
+            .expect("fixture VM present");
+        let types: Vec<_> = vm
+            .array_prop("config.hardware.device")
+            .iter()
+            .filter_map(|d| d.xsi_type.clone())
+            .collect();
+        assert!(types.iter().any(|t| t == "VirtualUSBController"));
+        assert!(types.iter().any(|t| t == "VirtualUSB"));
+        assert_eq!(cells(rows(&snap).expect("named VMs")).len(), 1);
     }
 
     /// A USB controller is not a USB device. The lab has controllers but no
@@ -129,34 +155,6 @@ mod tests {
         assert!(!is_usb_device("VirtualUSBController"));
         assert!(!is_usb_device("VirtualUSBXHCIController"));
         assert!(is_usb_device("VirtualUSB"));
-    }
-
-    /// Synthetic, and marked as such: no live response containing a
-    /// `VirtualUSB` has been observed, so this fixture asserts the shape the
-    /// vim25 schema documents rather than one that was captured. It uses only
-    /// `VirtualDevice` base fields, which are verified live on other devices in
-    /// the same array.
-    #[test]
-    fn a_usb_device_becomes_a_row_synthetic_shape() {
-        let fragment = r#"<objects><obj type="VirtualMachine">vm-1</obj>
-            <propSet><name>name</name><val>usb-vm</val></propSet>
-            <propSet><name>config.hardware.device</name><val>
-              <VirtualDevice xsi:type="VirtualUSBController">
-                <key>7000</key><deviceInfo><label>USB controller</label></deviceInfo>
-              </VirtualDevice>
-              <VirtualDevice xsi:type="VirtualUSB">
-                <key>7001</key>
-                <deviceInfo><label>USB 1</label><summary>Generic USB device</summary></deviceInfo>
-                <backing xsi:type="VirtualUSBRemoteHostBackingInfo"/>
-                <connectable><connected>true</connected></connectable>
-                <unitNumber>1</unitNumber>
-              </VirtualDevice>
-            </val></propSet></objects>"#;
-        let vm = ManagedObject::from_element(&xml::parse(fragment).expect("fragment parses"));
-        let snap = InventorySnapshot::from_parts(vec![vm], Vec::new());
-        let rows = cells(rows(&snap).expect("named VM"));
-        // The controller is skipped; only the device is a row.
-        assert_eq!(rows.len(), 1);
     }
 
     /// RVTools' Family / Speed / EHCI enabled / Auto connect are absent by

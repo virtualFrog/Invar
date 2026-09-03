@@ -435,6 +435,12 @@ mod captured_tests {
     #[test]
     fn vm_rollup_counts_only_vms_on_that_host() {
         let rows = cells(rows(&captured_snapshot()).expect("named host"));
-        assert!(matches!(at(&rows, "# VMs total"), Cell::Number(n) if n == 1.0));
+        // Two of the five captured VMs run on the captured host; the rest name
+        // a host that is deliberately absent from the corpus.
+        assert!(
+            matches!(at(&rows, "# VMs total"), Cell::Number(n) if n == 2.0),
+            "got {:?}",
+            at(&rows, "# VMs total")
+        );
     }
 }

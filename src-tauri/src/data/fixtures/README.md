@@ -60,6 +60,7 @@ find-and-replace on the serial string alone would have leaked it.
 | `vm_connected_cdrom.xml` | a Kubernetes control-plane VM | vHealth CDROM: a genuinely connected `VirtualCdrom`, alongside NICs that carry their own `connectable` block |
 | `vm_template.xml` | a Windows template | `config.template = true`, powered off, `.vmtx` rather than `.vmx` |
 | `host_full.xml` | an ESXi host | vHost across all 40 host properties; vHealth NTP/NTPD via the `HostService` array |
+| `vm_usb_nested_snapshot.xml` | `sttools-fixture-01`, built for the purpose | vUSB, and nested-snapshot flattening in vSnapshot and vHealth. The only capture with a `VirtualUSB` or a `childSnapshotList`. |
 | `containers.xml` | the Folder / Datacenter / ClusterComputeResource chain | the inventory path index: Datacenter, Cluster and Folder resolution. Holds every ancestor the VM and host captures reference, up to the datacenter, so the walk runs over a complete tree. Several `<objects>` under one root, loaded with `captured_many`. |
 
 Three of the four VMs reference `host-28`, which is deliberately *not* in the
@@ -73,14 +74,22 @@ keep hand-written fragments, and that is not laziness:
 
 | Case | Why no capture |
 |---|---|
-| Host with no NTP server / ntpd stopped | All three lab hosts are correctly configured |
-| Nested snapshots (`childSnapshotList`) | No snapshot in the lab has children |
+| Host with no NTP server / ntpd stopped | All three lab hosts are correctly configured, and breaking one to test it is not worth it |
 | `vCLS-` prefixed VMs | None exist; the exclusion filter never fires here |
 | A VM with no `name` property | An error path vCenter does not produce on demand |
-| RDM-backed disks | No raw device mappings exist in the lab |
+| RDM-backed disks | No raw device mappings exist, and the cluster is vSAN-backed so there is no raw LUN to map |
 
-A green run against this corpus therefore says nothing about those five paths.
+A green run against this corpus therefore says nothing about those four paths.
 `docs/LAB-ENVIRONMENT.md` lists the same gaps from the live-data side.
+
+Two entries used to be on that list and no longer are. Nested snapshots and
+`VirtualUSB` devices did not exist in the lab either, so a VM was created to
+carry both (`sttools-fixture-01`) rather than leaving them to hand-written XML.
+That paid for itself immediately: the real USB device reports `connected`
+directly on the device, not inside a `connectable` block the way CD-ROMs and
+NICs do, so the code written from the common shape returned an empty cell. A
+synthetic fixture would have been written to match the code and would have
+passed.
 
 ## Regenerating
 

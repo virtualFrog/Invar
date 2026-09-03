@@ -110,6 +110,14 @@ snapshot.rootSnapshotList   → <VirtualMachineSnapshotTree>             (type n
   …its children             → <childSnapshotList>                      (field name)
 ```
 
+### Devices do not all report connection the same way
+
+`VirtualCdrom`, `VirtualFloppy` and the ethernet cards carry a `connectable`
+block with `connected` / `startConnected` inside it. **`VirtualUSB` does not**:
+it reports `connected` directly on the device, alongside `vendor` and `product`.
+Reading `connectable/connected` on a USB device yields an empty cell and no
+error. Verified 2026-09-03 against a real device.
+
 ### Walking `parent`, and querying several types at once
 
 Verified live 2026-09-03, for the inventory path index:

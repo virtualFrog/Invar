@@ -282,7 +282,7 @@ mod captured_tests {
     #[test]
     fn one_row_per_captured_vm() {
         let rows = cells(rows(&captured_snapshot()).expect("captured VMs all have names"));
-        assert_eq!(rows.len(), 4);
+        assert_eq!(rows.len(), 5);
     }
 
     /// A template is still a vInfo row. RVTools counts templates, which is why

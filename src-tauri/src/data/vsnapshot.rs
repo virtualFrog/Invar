@@ -218,9 +218,12 @@ mod captured_tests {
     #[test]
     fn only_vms_with_snapshots_produce_rows() {
         let rows = cells(rows(&captured_snapshot()).expect("named VMs"));
-        assert_eq!(rows.len(), 1);
-        let vm = &rows[0][col(&columns(), "VM")];
-        assert!(matches!(vm, Cell::Text(n) if n == "vSAN File Service Node (1)"));
+        // Two VMs carry snapshots, and one of those has a nested pair.
+        assert_eq!(rows.len(), 3);
+        let vm_col = col(&columns(), "VM");
+        assert!(rows.iter().any(
+            |r| matches!(&r[vm_col], Cell::Text(n) if n == "vSAN File Service Node (1)")
+        ));
     }
 
     /// `snapshot.rootSnapshotList` is a `VirtualMachineSnapshotTree[]`, so its
@@ -229,7 +232,12 @@ mod captured_tests {
     #[test]
     fn the_snapshot_fields_come_off_the_tree_element() {
         let rows = cells(rows(&captured_snapshot()).expect("named VMs"));
-        let at = |l: &str| rows[0][col(&columns(), l)].clone();
+        let vm_col = col(&columns(), "VM");
+        let r = rows
+            .iter()
+            .find(|r| matches!(&r[vm_col], Cell::Text(n) if n == "vSAN File Service Node (1)"))
+            .expect("the vSAN node's snapshot row");
+        let at = |l: &str| r[col(&columns(), l)].clone();
         assert!(matches!(at("Name"), Cell::Text(ref s) if s == "eam-snapshot"));
         // `state` is the VM's power state at the moment the snapshot was taken,
         // not its state now: this VM is running, but the snapshot records
@@ -237,5 +245,53 @@ mod captured_tests {
         // the VM's current state and quietly encoded the wrong meaning.
         assert!(matches!(at("State"), Cell::Text(ref s) if s == "poweredOff"));
         assert!(matches!(at("Date / time"), Cell::Text(_)));
+    }
+}
+
+/// Nested snapshots, over the real capture rather than a hand-written tree.
+#[cfg(test)]
+mod nested_capture_tests {
+    use super::*;
+    use crate::data::snapshot::test_support::{captured_snapshot, cells, col};
+
+    /// `snapshot.rootSnapshotList` is a `VirtualMachineSnapshotTree[]`, so its
+    /// top-level elements carry the TYPE name — but a nested child repeats the
+    /// FIELD name, `childSnapshotList`. That asymmetry is the single easiest
+    /// thing to get wrong in vim25, and until this VM was built the lab had no
+    /// nested snapshot to prove it against.
+    #[test]
+    fn a_parent_and_its_child_both_become_rows() {
+        let rows = cells(rows(&captured_snapshot()).expect("named VMs"));
+        let vm_col = col(&columns(), "VM");
+        let name_col = col(&columns(), "Name");
+        let mine: Vec<String> = rows
+            .iter()
+            .filter(|r| matches!(&r[vm_col], Cell::Text(n) if n == "sttools-fixture-01"))
+            .filter_map(|r| match &r[name_col] {
+                Cell::Text(s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(mine.len(), 2, "parent and child, got {mine:?}");
+        assert!(mine.contains(&"sttools-parent".to_string()));
+        assert!(mine.contains(&"sttools-child".to_string()));
+    }
+
+    /// Depth-first: a child is emitted immediately after its parent, not
+    /// appended after every root.
+    #[test]
+    fn the_child_follows_its_parent() {
+        let rows = cells(rows(&captured_snapshot()).expect("named VMs"));
+        let name_col = col(&columns(), "Name");
+        let names: Vec<String> = rows
+            .iter()
+            .filter_map(|r| match &r[name_col] {
+                Cell::Text(s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect();
+        let p = names.iter().position(|n| n == "sttools-parent").expect("parent row");
+        let c = names.iter().position(|n| n == "sttools-child").expect("child row");
+        assert_eq!(c, p + 1, "child should directly follow its parent: {names:?}");
     }
 }

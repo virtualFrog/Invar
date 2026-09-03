@@ -25,7 +25,7 @@ Six of RVTools' 27 sheets exist, five of them as UI sheets and one export-only.
 | vSnapshot | 22 | 13 | Partial |
 | vHealth | 3 | 3 (5 of 7 checks) | Partial |
 | vMetaData | 4 | 4 (export only) | Done |
-| The other 21 sheets | | 0 | Missing |
+| The other 14 sheets | | 0 | Missing |
 
 Missing entirely: vCPU, vMemory, vPartition, vNetwork, vCD, vUSB, vTools,
 vSource, vRP, vCluster, vHBA, vNIC, vSwitch, vPort, dvSwitch, dvPort, vSC_VMK,
@@ -236,6 +236,30 @@ type. This is the cheapest large block of parity in the whole plan.
 
 Takes the app from 6 sheets to 13. Size: M in total, and mostly S per sheet once
 Phase 0 exists.
+
+### Phase 1 landed, 2026-09-03
+
+All seven sheets exist: vCPU, vMemory, vTools, vNetwork, vPartition, vCD, vUSB.
+The app is at **13 of 27 sheets**, and the promise that they would add no
+inventory walks held — measured, not assumed. A full 12-sheet export does the
+same 3 walks a 5-sheet export did; only the VM property union grew, 33 → 67.
+
+Live row counts: vInfo/vCPU/vMemory/vTools 162 each, vDisk 345, vPartition 791,
+vNetwork 234, vCD 23, vUSB 1, vSnapshot 5, vHost 3, vHealth 169.
+
+Three columns are deliberately absent rather than shipped empty, each because a
+live query said so: vMemory's `Overhead` (`runtime.memoryOverhead` returned for
+no VM), vNetwork's `Switch` (needs `DistributedVirtualSwitch`, which is Phase 2)
+and vTools' `Required Version` (no observed source property).
+
+**Two shapes the lab could not test were created rather than assumed.** It had
+no nested snapshot and no `VirtualUSB` device, so `sttools-fixture-01` was built
+to carry both. That immediately caught a real defect: a `VirtualUSB` reports
+`connected` on the device itself, not inside the `connectable` block that
+CD-ROMs and NICs use, so the first implementation produced an empty cell and no
+error. Hand-written XML would have been written to match the wrong code.
+
+Test count 51 → 80.
 
 ### Phase 2: host and network sheets
 

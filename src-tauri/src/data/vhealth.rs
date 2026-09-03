@@ -419,7 +419,7 @@ mod captured_tests {
             .into_iter()
             .filter(|(kind, _)| kind == "Foldername")
             .collect();
-        assert_eq!(folder.len(), 4, "got {folder:?}");
+        assert_eq!(folder.len(), 5, "got {folder:?}");
     }
 
     /// One capture has a connected CD-ROM. The others carry a disconnected
@@ -435,18 +435,50 @@ mod captured_tests {
     }
 
     #[test]
-    fn the_captured_snapshot_is_reported_once() {
+    fn every_snapshot_is_reported_including_nested_ones() {
         let rows = cells(rows(&captured_snapshot()).expect("named objects"));
         let snaps: Vec<_> =
             findings(&rows).into_iter().filter(|(k, _)| k == "Snapshot").collect();
-        assert_eq!(snaps.len(), 1, "got {snaps:?}");
-        assert_eq!(snaps[0].1, "vSAN File Service Node (1)");
+        assert_eq!(snaps.len(), 3, "got {snaps:?}");
+        assert!(snaps.iter().any(|(_, n)| n == "vSAN File Service Node (1)"));
+        assert_eq!(
+            snaps.iter().filter(|(_, n)| n == "sttools-fixture-01").count(),
+            2,
+            "the nested child must be reported as well as its parent"
+        );
     }
 
-    /// 4 Foldername + 1 CDROM + 1 Snapshot, and nothing from the host.
     #[test]
     fn total_findings_for_the_capture() {
         let rows = cells(rows(&captured_snapshot()).expect("named objects"));
-        assert_eq!(rows.len(), 6);
+        // 5 Foldername + 1 CDROM + 3 Snapshot, and nothing from the host.
+        assert_eq!(rows.len(), 9);
+    }
+}
+
+/// vHealth's snapshot check over a real nested snapshot.
+#[cfg(test)]
+mod nested_capture_tests {
+    use super::*;
+    use crate::data::snapshot::test_support::captured_snapshot;
+
+    /// Both the parent and its nested child are reported. A flattener that
+    /// stopped at the roots would find only one and no error would be raised.
+    #[test]
+    fn a_nested_snapshot_is_reported_as_well_as_its_parent() {
+        let rows = rows(&captured_snapshot()).expect("named objects");
+        let found: Vec<String> = rows
+            .iter()
+            .filter(|(_, r)| matches!(&r[2], Cell::Text(k) if k == "Snapshot"))
+            .filter_map(|(_, r)| match (&r[0], &r[1]) {
+                (Cell::Text(name), Cell::Text(msg)) if name == "sttools-fixture-01" => {
+                    Some(msg.clone())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(found.len(), 2, "parent and child, got {found:?}");
+        assert!(found.iter().any(|m| m.contains("sttools-parent")));
+        assert!(found.iter().any(|m| m.contains("sttools-child")));
     }
 }

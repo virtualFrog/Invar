@@ -83,7 +83,7 @@ curl -sk -X POST "https://$VC_HOST/sdk" \
 | Datacenter | `vcf-mgmt-dc01` |
 | Cluster | `vcf-mgmt-cl01` (1), DRS and HA both enabled |
 | ESXi hosts | 3 |
-| VMs | 161 via SOAP, of which 7 are templates |
+| VMs | 162 via SOAP, of which 7 are templates |
 | Datastores | 4 |
 | Networks | 60 (59 distributed portgroups, 1 standard) |
 | Resource pools | 43 |
@@ -124,6 +124,20 @@ All three have NTP configured (`10.24.0.10`) and `ntpd` running, so they produce
 Essentially everything lives on the vSAN datastore. That single fact drives the
 biggest surprise in the vHealth sheet, below.
 
+### `sttools-fixture-01` — a VM created for testing
+
+This VM exists only to give the test corpus two shapes the lab otherwise lacked.
+It is powered off, has no disk and no NIC, and carries:
+
+- a **nested snapshot**: `sttools-parent` with `sttools-child` beneath it, which
+  is the `childSnapshotList` shape vSnapshot and vHealth flatten;
+- a **`VirtualUSB` device** on a USB controller, which is what vUSB parses.
+
+Before it existed, both code paths were exercised only by hand-written XML. It
+is safe to delete — the annotation on the VM says so — but deleting it takes
+vUSB back to zero rows and removes the only nested snapshot, so the fixtures in
+`src-tauri/src/data/fixtures/` should be regarded as the durable record.
+
 ### Workload character
 
 This is a **VCF 9 management domain running vSphere Supervisor**, so most VMs are
@@ -153,6 +167,10 @@ list before "fixing" an empty column.**
 | vInfo | `Annotation` | 46/161 | Most VMs simply carry no annotation. |
 | vHealth | NTP / NTPD findings | 0 | All three hosts have NTP servers set and `ntpd` running. A clean result. |
 | all | vCLS exclusion | never fires | **No VM in this lab is named `vCLS-*`.** The `starts_with("vCLS-")` filter in `common.rs` and `vinfo.rs` is inert here, so it is *not* exercised against the live lab — only by unit tests. Do not read a passing lab run as evidence that filter works. |
+| vNetwork | `Network` | 178/234 | 56 NICs use `VirtualEthernetCardLegacyNetworkBackingInfo`, whose `deviceName` comes back empty. Their VMs do report `guest.net`, but the guest names none of those NICs either, so no source supplies a name. |
+| vNetwork | `IPv4 Address` | 97/234 | Comes from `guest.net`, which needs VMware Tools. |
+| vMemory | `Overhead` | column absent | `runtime.memoryOverhead` was returned for **no** VM, so the column is not implemented rather than shipped always-empty. |
+| vUSB | all | 1 row | Only `sttools-fixture-01` has a `VirtualUSB` device; the lab's other USB entries are *controllers*, which are not devices and are deliberately not rows. |
 
 ### The one that looks alarming and is not
 

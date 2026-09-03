@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn one_row_per_vm() {
         let rows = cells(rows(&captured_snapshot()).expect("named VMs"));
-        assert_eq!(rows.len(), 4);
+        assert_eq!(rows.len(), 5);
     }
 
     #[test]

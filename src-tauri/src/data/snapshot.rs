@@ -411,6 +411,13 @@ pub mod test_support {
     pub const VM_CONNECTED_CDROM: &str = include_str!("fixtures/vm_connected_cdrom.xml");
     /// `config.template = true`, powered off, `.vmtx` rather than `.vmx`.
     pub const VM_TEMPLATE: &str = include_str!("fixtures/vm_template.xml");
+    /// The one VM carrying a `VirtualUSB` device and a *nested* snapshot.
+    ///
+    /// Built in the lab on purpose: nothing there had either shape, so both
+    /// code paths were previously exercised only by hand-written XML. See
+    /// `docs/LAB-ENVIRONMENT.md`.
+    pub const VM_USB_NESTED_SNAPSHOT: &str =
+        include_str!("fixtures/vm_usb_nested_snapshot.xml");
     /// A host with all 40 properties vHost and vHealth read.
     pub const HOST_FULL: &str = include_str!("fixtures/host_full.xml");
     /// The Folder / Datacenter / ClusterComputeResource chain the VM and host
@@ -444,6 +451,7 @@ pub mod test_support {
                 captured(VM_SNAPSHOTS),
                 captured(VM_CONNECTED_CDROM),
                 captured(VM_TEMPLATE),
+                captured(VM_USB_NESTED_SNAPSHOT),
             ],
             vec![captured(HOST_FULL)],
             captured_many(CONTAINERS),
