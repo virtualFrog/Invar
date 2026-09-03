@@ -89,6 +89,11 @@ pub const SPEC: SheetSpec = SheetSpec {
     host_props: &[],
     dvs_props: &[DVS_PROPS],
     dvpg_props: &[],
+    cluster_props: &[],
+    datastore_props: &[],
+    rp_props: &[],
+    wants_licenses: false,
+    wants_about: false,
     // The sheet carries its own Datacenter column, in RVTools' position; it is
     // not a host- or VM-derived sheet, so it gets no generic location columns.
     source: RowSource::None,

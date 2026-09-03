@@ -135,6 +135,11 @@ pub const SPEC: SheetSpec = SheetSpec {
     host_props: &[],
     dvs_props: &[],
     dvpg_props: &[DVPG_PROPS],
+    cluster_props: &[],
+    datastore_props: &[],
+    rp_props: &[],
+    wants_licenses: false,
+    wants_about: false,
     // RVTools' dvPort carries no Datacenter or Cluster column.
     source: RowSource::None,
     rows,

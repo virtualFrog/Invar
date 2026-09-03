@@ -122,6 +122,17 @@ pub struct InventorySnapshot {
     pub dvswitches: Vec<ManagedObject>,
     /// `DistributedVirtualPortgroup` objects, for dvPort.
     pub dvportgroups: Vec<ManagedObject>,
+    /// `ClusterComputeResource` objects, for vCluster.
+    pub clusters: Vec<ManagedObject>,
+    /// `Datastore` objects, for vDatastore.
+    pub datastores: Vec<ManagedObject>,
+    /// `ResourcePool` objects, for vRP.
+    pub resource_pools: Vec<ManagedObject>,
+    /// The `LicenseManager` singleton, for vLicense. Not reachable through a
+    /// ContainerView, so it is fetched by its own moref.
+    pub license_manager: Option<ManagedObject>,
+    /// `ServiceContent.about`, for vSource.
+    pub about: Option<crate::vcenter::xml::Element>,
     /// Datacenter / Cluster / Folder lookups.
     pub paths: PathIndex,
 }
@@ -136,6 +147,11 @@ impl InventorySnapshot {
         host_props: &[&'static str],
         dvs_props: &[&'static str],
         dvpg_props: &[&'static str],
+        cluster_props: &[&'static str],
+        datastore_props: &[&'static str],
+        rp_props: &[&'static str],
+        want_licenses: bool,
+        want_about: bool,
     ) -> Result<Self, String> {
         // Every VM-derived sheet resolves `runtime.host` to a host name, so a
         // VM fetch always implies at least the hosts' names. This is the walk
@@ -200,6 +216,37 @@ impl InventorySnapshot {
             session.soap.retrieve("DistributedVirtualPortgroup", dvpg_props).await?
         };
 
+        let clusters = if cluster_props.is_empty() {
+            Vec::new()
+        } else {
+            session.soap.retrieve("ClusterComputeResource", cluster_props).await?
+        };
+        let datastores = if datastore_props.is_empty() {
+            Vec::new()
+        } else {
+            session.soap.retrieve("Datastore", datastore_props).await?
+        };
+        let resource_pools = if rp_props.is_empty() {
+            Vec::new()
+        } else {
+            session.soap.retrieve("ResourcePool", rp_props).await?
+        };
+
+        // Neither of these lives in a container, so both are direct calls.
+        let about = if want_about {
+            session.soap.service_content().await?.child("about").cloned()
+        } else {
+            None
+        };
+        let license_manager = if want_licenses {
+            session
+                .soap
+                .retrieve_moref("LicenseManager", "LicenseManager", &["licenses"])
+                .await?
+        } else {
+            None
+        };
+
         let host_names = hosts
             .iter()
             .filter_map(|h| h.str_prop("name").map(|n| (h.moref.clone(), n)))
@@ -213,6 +260,11 @@ impl InventorySnapshot {
             host_names,
             dvswitches,
             dvportgroups,
+            clusters,
+            datastores,
+            resource_pools,
+            license_manager,
+            about,
             paths,
         })
     }
@@ -242,8 +294,38 @@ impl InventorySnapshot {
             host_names,
             dvswitches: Vec::new(),
             dvportgroups: Vec::new(),
+            clusters: Vec::new(),
+            datastores: Vec::new(),
+            resource_pools: Vec::new(),
+            license_manager: None,
+            about: None,
             paths,
         }
+    }
+
+    pub fn with_clusters(mut self, clusters: Vec<ManagedObject>) -> Self {
+        self.clusters = clusters;
+        self
+    }
+
+    pub fn with_datastores(mut self, datastores: Vec<ManagedObject>) -> Self {
+        self.datastores = datastores;
+        self
+    }
+
+    pub fn with_resource_pools(mut self, pools: Vec<ManagedObject>) -> Self {
+        self.resource_pools = pools;
+        self
+    }
+
+    pub fn with_license_manager(mut self, lm: Option<ManagedObject>) -> Self {
+        self.license_manager = lm;
+        self
+    }
+
+    pub fn with_about(mut self, about: crate::vcenter::xml::Element) -> Self {
+        self.about = Some(about);
+        self
     }
 
     /// As `from_parts_with_containers`, plus distributed-switching objects.
@@ -335,6 +417,16 @@ pub struct SheetSpec {
     pub dvs_props: &'static [&'static [&'static str]],
     /// `DistributedVirtualPortgroup` property sets. Empty reads nothing.
     pub dvpg_props: &'static [&'static [&'static str]],
+    /// `ClusterComputeResource` property sets. Empty reads nothing.
+    pub cluster_props: &'static [&'static [&'static str]],
+    /// `Datastore` property sets. Empty reads nothing.
+    pub datastore_props: &'static [&'static [&'static str]],
+    /// `ResourcePool` property sets. Empty reads nothing.
+    pub rp_props: &'static [&'static [&'static str]],
+    /// Whether this sheet needs the `LicenseManager` singleton.
+    pub wants_licenses: bool,
+    /// Whether this sheet needs `ServiceContent.about`.
+    pub wants_about: bool,
     /// What each row describes, which decides its location columns.
     pub source: RowSource,
     /// Pure by design: all I/O happened when the snapshot was built.
@@ -364,10 +456,21 @@ pub async fn fetch_tables(
         specs.iter().flat_map(|s| s.dvs_props.iter().copied()).collect();
     let dvpg_sets: Vec<&[&'static str]> =
         specs.iter().flat_map(|s| s.dvpg_props.iter().copied()).collect();
+    let cluster_sets: Vec<&[&'static str]> =
+        specs.iter().flat_map(|s| s.cluster_props.iter().copied()).collect();
+    let ds_sets: Vec<&[&'static str]> =
+        specs.iter().flat_map(|s| s.datastore_props.iter().copied()).collect();
+    let rp_sets: Vec<&[&'static str]> =
+        specs.iter().flat_map(|s| s.rp_props.iter().copied()).collect();
     let vm_props = union(&vm_sets);
     let host_props = union(&host_sets);
     let dvs_props = union(&dvs_sets);
     let dvpg_props = union(&dvpg_sets);
+    let cluster_props = union(&cluster_sets);
+    let datastore_props = union(&ds_sets);
+    let rp_props = union(&rp_sets);
+    let want_licenses = specs.iter().any(|s| s.wants_licenses);
+    let want_about = specs.iter().any(|s| s.wants_about);
 
     let mut tables: Vec<Table> = specs
         .iter()
@@ -390,6 +493,11 @@ pub async fn fetch_tables(
                     &host_props,
                     &dvs_props,
                     &dvpg_props,
+                    &cluster_props,
+                    &datastore_props,
+                    &rp_props,
+                    want_licenses,
+                    want_about,
                 )
                 .await
             }
@@ -514,6 +622,32 @@ pub mod test_support {
 
     pub fn captured_dvportgroups() -> Vec<ManagedObject> {
         captured_many(DVPORTGROUPS)
+    }
+
+    pub const CLUSTERS: &str = include_str!("fixtures/clusters.xml");
+    pub const DATASTORES: &str = include_str!("fixtures/datastores.xml");
+    /// Four of the lab's 43 pools: the cluster root plus three namespace pools.
+    pub const RESOURCE_POOLS: &str = include_str!("fixtures/resourcepools.xml");
+    /// The `LicenseManager` singleton. Its key is masked -- a real licence key
+    /// is a credential and does not belong in a public repo.
+    pub const LICENSES: &str = include_str!("fixtures/licenses.xml");
+    /// `ServiceContent.about`, which is not a managed object at all.
+    pub const ABOUT: &str = include_str!("fixtures/about.xml");
+
+    pub fn captured_clusters() -> Vec<ManagedObject> {
+        captured_many(CLUSTERS)
+    }
+    pub fn captured_datastores() -> Vec<ManagedObject> {
+        captured_many(DATASTORES)
+    }
+    pub fn captured_resource_pools() -> Vec<ManagedObject> {
+        captured_many(RESOURCE_POOLS)
+    }
+    pub fn captured_licenses() -> ManagedObject {
+        captured_many(LICENSES).into_iter().next().expect("one LicenseManager")
+    }
+    pub fn captured_about() -> crate::vcenter::xml::Element {
+        xml::parse(ABOUT).expect("about fixture parses")
     }
 
     /// Parse a capture holding several `<objects>` elements under one root.

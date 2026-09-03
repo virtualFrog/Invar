@@ -200,6 +200,47 @@ impl SoapClient {
         result
     }
 
+    /// Retrieve properties of **one** managed object, addressed by its own
+    /// moref rather than through a ContainerView.
+    ///
+    /// Singletons like `LicenseManager` are not in any container, so the
+    /// ContainerView shape every other fetch uses cannot reach them at all.
+    /// Returns `None` when the object exists but reports none of the requested
+    /// properties.
+    pub async fn retrieve_moref(
+        &self,
+        obj_type: &str,
+        moref: &str,
+        props: &[&str],
+    ) -> Result<Option<ManagedObject>, String> {
+        let path_set: String = props
+            .iter()
+            .map(|p| format!("<vim25:pathSet>{}</vim25:pathSet>", xml_escape(p)))
+            .collect();
+        let body = format!(
+            r#"<vim25:RetrievePropertiesEx><vim25:_this type="PropertyCollector">propertyCollector</vim25:_this><vim25:specSet><vim25:propSet><vim25:type>{obj_type}</vim25:type>{path_set}</vim25:propSet><vim25:objectSet><vim25:obj type="{obj_type}">{}</vim25:obj></vim25:objectSet></vim25:specSet><vim25:options/></vim25:RetrievePropertiesEx>"#,
+            xml_escape(moref)
+        );
+        let page = self.call(&body).await?;
+        Ok(page
+            .find("returnval")
+            .and_then(|r| r.children_named("objects").next().map(ManagedObject::from_element)))
+    }
+
+    /// `ServiceContent`, which needs no ContainerView and names the singleton
+    /// managers (`LicenseManager` among them). `about` on it is what vSource
+    /// reports.
+    pub async fn service_content(&self) -> Result<Element, String> {
+        let body = self
+            .call(
+                r#"<vim25:RetrieveServiceContent><vim25:_this type="ServiceInstance">ServiceInstance</vim25:_this></vim25:RetrieveServiceContent>"#,
+            )
+            .await?;
+        body.find("returnval")
+            .cloned()
+            .ok_or_else(|| "RetrieveServiceContent returned no content".to_string())
+    }
+
     async fn retrieve_with_view(
         &self,
         obj_types: &[&str],

@@ -13,18 +13,23 @@ pub mod insights;
 pub mod snapshot;
 pub mod topology;
 pub mod vcd;
+pub mod vcluster;
 pub mod vcpu;
+pub mod vdatastore;
 pub mod vdisk;
 pub mod vhba;
 pub mod vhealth;
 pub mod vhost;
 pub mod vinfo;
+pub mod vlicense;
 pub mod vmemory;
 pub mod vnetwork;
 pub mod vnic;
 pub mod vpartition;
 pub mod vport;
+pub mod vrp;
 pub mod vsc_vmk;
+pub mod vsource;
 pub mod vsnapshot;
 pub mod vswitch;
 pub mod vtools;
@@ -51,6 +56,9 @@ pub const SHEETS: &[&SheetSpec] = &[
     &vusb::SPEC,
     &vsnapshot::SPEC,
     &vtools::SPEC,
+    &vsource::SPEC,
+    &vrp::SPEC,
+    &vcluster::SPEC,
     &vhost::SPEC,
     &vhba::SPEC,
     &vnic::SPEC,
@@ -59,6 +67,8 @@ pub const SHEETS: &[&SheetSpec] = &[
     &dvswitch::SPEC,
     &dvport::SPEC,
     &vsc_vmk::SPEC,
+    &vdatastore::SPEC,
+    &vlicense::SPEC,
     &vhealth::SPEC,
 ];
 

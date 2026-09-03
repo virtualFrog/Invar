@@ -92,6 +92,11 @@ pub const SPEC: SheetSpec = SheetSpec {
     host_props: &[],
     dvs_props: &[],
     dvpg_props: &[],
+    cluster_props: &[],
+    datastore_props: &[],
+    rp_props: &[],
+    wants_licenses: false,
+    wants_about: false,
     source: RowSource::Vm,
     rows,
 };
