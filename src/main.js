@@ -56,23 +56,71 @@ function cellText(value) {
   return String(value);
 }
 
-function renderHead() {
+/** Columns whose values are identifiers rather than prose, set in the data face
+ * so that a stray character in a UUID or moref is visible. */
+const ID_COLUMNS = new Set([
+  "VM ID", "VM UUID", "SMBIOS UUID", "UUID", "Disk UUID", "Disk Path", "Path",
+  "Log directory", "Snapshot directory", "Suspend directory", "Mac Address",
+  "MAC", "Primary IP Address", "IPv4 Address", "IP Address", "Subnet mask",
+  "Gateway", "WWN", "Serial number", "Service tag", "Switch", "URL",
+  "Change Version", "Key", "Pci", "PCI",
+]);
+
+/** How many of these rows actually carry a value for column `i`. */
+function coverage(rows, i) {
+  let filled = 0;
+  for (const row of rows) {
+    const v = row[i];
+    if (v !== null && v !== undefined && v !== "") filled += 1;
+  }
+  return { filled, total: rows.length };
+}
+
+function renderHead(rows) {
   const row = el("head-row");
   row.replaceChildren();
+  const visible = rows || (table ? table.rows : []);
+
   table.columns.forEach((col, i) => {
     const th = document.createElement("th");
-    th.textContent = col.label;
-    th.title = col.label;
+
+    const label = document.createElement("span");
+    label.className = "th-label";
+    label.textContent = col.label;
     if (sort.index === i) {
       th.classList.add("sorted");
       const arrow = document.createElement("span");
       arrow.className = "arrow";
       arrow.textContent = sort.ascending ? "▲" : "▼";
-      th.append(arrow);
+      label.append(arrow);
     }
+    th.append(label);
+
+    // The coverage meter. A column that is entirely empty is the failure this
+    // whole codebase guards against, so it is shown rather than left to be
+    // noticed by someone scrolling.
+    const { filled, total } = coverage(visible, i);
+    const meter = document.createElement("div");
+    meter.className = "coverage";
+    const fill = document.createElement("span");
+    const pct = total ? Math.round((filled / total) * 100) : 0;
+    fill.style.width = `${pct}%`;
+    if (total && filled === 0) meter.classList.add("none");
+    else if (filled < total) meter.classList.add("partial");
+    meter.append(fill);
+    th.append(meter);
+
+    th.title =
+      total === 0
+        ? col.label
+        : filled === total
+          ? `${col.label} — all ${total} rows reported`
+          : filled === 0
+            ? `${col.label} — not reported by any of the ${total} rows`
+            : `${col.label} — ${filled} of ${total} rows reported (${pct}%)`;
+
     th.addEventListener("click", () => {
       sort = { index: i, ascending: sort.index === i ? !sort.ascending : true };
-      renderHead();
       renderBody();
     });
     row.append(th);
@@ -110,16 +158,23 @@ function renderBody() {
   if (!table) return;
 
   const rows = sortedRows(filteredRows(table.rows));
-  const frag = document.createDocumentFragment();
 
+  // The header meters describe what is on screen, so they follow the filter.
+  renderHead(rows);
+
+  const frag = document.createDocumentFragment();
   for (const row of rows) {
     const tr = document.createElement("tr");
     row.forEach((value, i) => {
       const td = document.createElement("td");
       const text = cellText(value);
+      // textContent throughout: vCenter names and annotations are free text and
+      // would be script if this were ever innerHTML.
       td.textContent = text;
       td.title = text;
-      if (table.columns[i].kind === "number") td.classList.add("num");
+      const col = table.columns[i];
+      if (col.kind === "number") td.classList.add("num");
+      else if (ID_COLUMNS.has(col.label)) td.classList.add("id");
       if (typeof value === "boolean") td.classList.add(value ? "bool-true" : "bool-false");
       if (text === "") td.classList.add("empty");
       tr.append(td);
@@ -130,7 +185,35 @@ function renderBody() {
 
   const shown = rows.length;
   const total = table.rows.length;
-  setStatus(shown === total ? `${total} rows` : `${shown} of ${total} rows`);
+  const wrap = el("table-wrap");
+  let note = wrap.querySelector(".empty-state");
+  if (note) note.remove();
+  if (total > 0 && shown === 0) {
+    note = document.createElement("div");
+    note.className = "empty-state";
+    const head = document.createElement("strong");
+    head.textContent = "No rows match this filter";
+    const body2 = document.createElement("span");
+    body2.textContent = `Clear the filter to see all ${total} rows.`;
+    note.append(head, body2);
+    wrap.append(note);
+  } else if (total === 0) {
+    note = document.createElement("div");
+    note.className = "empty-state";
+    const head = document.createElement("strong");
+    head.textContent = "Nothing to show on this sheet";
+    const body2 = document.createElement("span");
+    body2.textContent =
+      "The vCenter reported no objects of this kind. That can be correct — check the sheet's notes before treating it as a fault.";
+    note.append(head, body2);
+    wrap.append(note);
+  }
+
+  setStatus(
+    shown === total
+      ? `${total} ${total === 1 ? "row" : "rows"}`
+      : `${shown} of ${total} rows`,
+  );
 }
 
 // ---- dashboard ----
@@ -425,7 +508,8 @@ async function loadSheet() {
     rowCounts.set(currentSheet, table.rows.length);
     renderNav();
     renderWarnings(table.warnings);
-    renderHead();
+    // renderBody draws the header too, because the coverage meters describe
+    // the rows currently on screen and therefore follow the filter.
     renderBody();
   } catch (e) {
     table = null;
