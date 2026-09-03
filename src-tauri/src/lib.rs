@@ -84,7 +84,16 @@ async fn fetch_all_tables(state: &AppState) -> Result<(Vec<Table>, Vec<String>),
     let servers = conns.iter().map(|c| c.label()).collect();
     // One inventory fetch per vCenter, shared by every sheet, rather than one
     // walk per sheet.
-    let tables = data::snapshot::fetch_tables(data::SHEETS, &conns, &state.cache).await;
+    //
+    // Sheets that need a datastore file walk are left out. Every other sheet
+    // reads inventory the vCenter already holds and answers in seconds; the
+    // file walk reads filesystems, and a large datastore can take many minutes
+    // or not finish at all. Putting that in "export everything" would turn a
+    // routine action into an unbounded one. vFileInfo is fetched when someone
+    // opens it, having chosen to wait.
+    let sheets: Vec<&data::snapshot::SheetSpec> =
+        data::SHEETS.iter().copied().filter(|s| !s.wants_files).collect();
+    let tables = data::snapshot::fetch_tables(&sheets, &conns, &state.cache).await;
     Ok((tables, servers))
 }
 

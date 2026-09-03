@@ -17,6 +17,18 @@ use crate::vcenter::soap::ManagedObject;
 use crate::vcenter::{Session, SessionCache, VCenterConnection};
 use std::collections::HashMap;
 
+/// How long one datastore's file walk may take before it is reported as
+/// overrunning.
+///
+/// Fifteen seconds. The instinct is to be generous, since a large datastore
+/// legitimately takes minutes — the lab's vSAN store had not finished after
+/// ten. But that is the argument for a longer wait only if waiting eventually
+/// works, and here it does not: the choice is between answering quickly with an
+/// honest gap and blocking the interface for minutes to arrive at the same gap.
+/// A datastore that has not answered in fifteen seconds is reported, and the
+/// rest of the sheet is shown.
+const FILE_WALK_BUDGET_SECS: u64 = 15;
+
 /// What a sheet's rows are *about*, which decides the location columns it gets.
 ///
 /// RVTools is not uniform here: VM sheets carry Datacenter, Cluster and Folder;
@@ -133,6 +145,17 @@ pub struct InventorySnapshot {
     pub license_manager: Option<ManagedObject>,
     /// `ServiceContent.about`, for vSource.
     pub about: Option<crate::vcenter::xml::Element>,
+    /// Datastore folder search results, for vFileInfo. Empty unless a sheet
+    /// asked for the walk, which is deliberate: it is the one fetch in the app
+    /// that reads filesystems rather than inventory, and it can take minutes.
+    pub datastore_files: Vec<crate::vcenter::xml::Element>,
+    /// Parts of the fetch that failed without invalidating the rest.
+    ///
+    /// A datastore whose file walk overruns belongs here rather than in an
+    /// `Err`: returning an error would throw away the datastores that did
+    /// answer, and silently keeping only those would be worse still. The rows
+    /// that were read are shown, and the gap is named.
+    pub warnings: Vec<String>,
     /// Datacenter / Cluster / Folder lookups.
     pub paths: PathIndex,
 }
@@ -152,6 +175,7 @@ impl InventorySnapshot {
         rp_props: &[&'static str],
         want_licenses: bool,
         want_about: bool,
+        want_files: bool,
     ) -> Result<Self, String> {
         // Every VM-derived sheet resolves `runtime.host` to a host name, so a
         // VM fetch always implies at least the hosts' names. This is the walk
@@ -249,6 +273,40 @@ impl InventorySnapshot {
             None
         };
 
+        // The datastore file walk. Measured in the lab: three VMFS datastores
+        // answered in about a second each, and a 32 TiB vSAN datastore had not
+        // finished after ten minutes. So it happens only when asked, one
+        // datastore at a time, under a budget, and a datastore that overruns is
+        // reported by name instead of contributing a short list that looks
+        // complete.
+        let mut datastore_files = Vec::new();
+        let mut warnings = Vec::new();
+        if want_files {
+            for ds in &datastores {
+                let (Some(name), Some(browser)) =
+                    (ds.str_prop("name"), ds.str_prop("browser"))
+                else {
+                    continue;
+                };
+                match session
+                    .soap
+                    .search_datastore(
+                        &browser,
+                        &format!("[{name}]"),
+                        std::time::Duration::from_secs(FILE_WALK_BUDGET_SECS),
+                    )
+                    .await
+                {
+                    Ok(mut found) => datastore_files.append(&mut found),
+                    // One datastore overrunning must not discard the others,
+                    // and the shortfall must not be silent. Both halves matter.
+                    Err(e) => warnings.push(format!(
+                        "datastore [{name}] was not fully read: {e}. Its files are missing from this sheet."
+                    )),
+                }
+            }
+        }
+
         let host_names = hosts
             .iter()
             .filter_map(|h| h.str_prop("name").map(|n| (h.moref.clone(), n)))
@@ -267,6 +325,8 @@ impl InventorySnapshot {
             resource_pools,
             license_manager,
             about,
+            datastore_files,
+            warnings,
             paths,
         })
     }
@@ -301,8 +361,19 @@ impl InventorySnapshot {
             resource_pools: Vec::new(),
             license_manager: None,
             about: None,
+            datastore_files: Vec::new(),
+            warnings: Vec::new(),
             paths,
         }
+    }
+
+    /// Datastore folder search results, for tests that have captured them.
+    pub fn with_datastore_files(
+        mut self,
+        files: Vec<crate::vcenter::xml::Element>,
+    ) -> Self {
+        self.datastore_files = files;
+        self
     }
 
     pub fn with_clusters(mut self, clusters: Vec<ManagedObject>) -> Self {
@@ -429,6 +500,9 @@ pub struct SheetSpec {
     pub wants_licenses: bool,
     /// Whether this sheet needs `ServiceContent.about`.
     pub wants_about: bool,
+    /// Whether this sheet needs the datastore file walk. Only vFileInfo does,
+    /// and it is excluded from the export because of what the walk costs.
+    pub wants_files: bool,
     /// What each row describes, which decides its location columns.
     pub source: RowSource,
     /// Pure by design: all I/O happened when the snapshot was built.
@@ -473,6 +547,7 @@ pub async fn fetch_tables(
     let rp_props = union(&rp_sets);
     let want_licenses = specs.iter().any(|s| s.wants_licenses);
     let want_about = specs.iter().any(|s| s.wants_about);
+    let want_files = specs.iter().any(|s| s.wants_files);
 
     let mut tables: Vec<Table> = specs
         .iter()
@@ -500,6 +575,7 @@ pub async fn fetch_tables(
                     &rp_props,
                     want_licenses,
                     want_about,
+                    want_files,
                 )
                 .await
             }
@@ -520,6 +596,15 @@ pub async fn fetch_tables(
             match (spec.rows)(&snapshot) {
                 Ok(rows) => table.extend_from(&label, rows, spec.source, &snapshot.paths),
                 Err(e) => table.warnings.push(format!("{label}: {e}")),
+            }
+            // Only the sheet that asked for the walk hears about it. Pushing
+            // it onto every table told 24 sheets about a datastore they never
+            // read, which is noise, and noise is how a real warning gets
+            // ignored.
+            if spec.wants_files {
+                for w in &snapshot.warnings {
+                    table.warnings.push(format!("{label}: {w}"));
+                }
             }
         }
     }
@@ -648,6 +733,18 @@ pub mod test_support {
     pub fn captured_licenses() -> ManagedObject {
         captured_many(LICENSES).into_iter().next().expect("one LicenseManager")
     }
+    /// Folder search results from the lab's small VMFS datastores. The vSAN
+    /// one is deliberately not here: its walk did not finish in ten minutes.
+    pub const DATASTORE_FILES: &str = include_str!("fixtures/datastore_files.xml");
+
+    pub fn captured_files() -> Vec<crate::vcenter::xml::Element> {
+        xml::parse(DATASTORE_FILES)
+            .expect("file fixture parses")
+            .children_named("HostDatastoreBrowserSearchResults")
+            .cloned()
+            .collect()
+    }
+
     pub fn captured_about() -> crate::vcenter::xml::Element {
         xml::parse(ABOUT).expect("about fixture parses")
     }

@@ -97,6 +97,7 @@ pub const SPEC: SheetSpec = SheetSpec {
     rp_props: &[],
     wants_licenses: false,
     wants_about: false,
+    wants_files: false,
     source: RowSource::Vm,
     rows,
 };

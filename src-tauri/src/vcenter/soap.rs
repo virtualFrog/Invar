@@ -200,6 +200,80 @@ impl SoapClient {
         result
     }
 
+    /// Poll a `Task` until it leaves the running state.
+    ///
+    /// Most of vim25 answers in the call itself; the datastore browser does not,
+    /// and returns a task instead. `timeout` is a real limit rather than a
+    /// formality: a recursive walk of a large datastore can run for many
+    /// minutes, and the caller needs the chance to report that honestly rather
+    /// than hang.
+    pub async fn wait_task(
+        &self,
+        task: &str,
+        timeout: std::time::Duration,
+    ) -> Result<Option<Element>, String> {
+        let started = std::time::Instant::now();
+        loop {
+            let body = format!(
+                r#"<vim25:RetrievePropertiesEx><vim25:_this type="PropertyCollector">propertyCollector</vim25:_this><vim25:specSet><vim25:propSet><vim25:type>Task</vim25:type><vim25:pathSet>info.state</vim25:pathSet><vim25:pathSet>info.error</vim25:pathSet><vim25:pathSet>info.result</vim25:pathSet></vim25:propSet><vim25:objectSet><vim25:obj type="Task">{}</vim25:obj></vim25:objectSet></vim25:specSet><vim25:options/></vim25:RetrievePropertiesEx>"#,
+                xml_escape(task)
+            );
+            let page = self.call(&body).await?;
+            let obj = page
+                .find("returnval")
+                .and_then(|r| r.children_named("objects").next().map(ManagedObject::from_element));
+
+            if let Some(obj) = obj {
+                match obj.str_prop("info.state").as_deref() {
+                    Some("success") => return Ok(obj.prop("info.result").cloned()),
+                    Some("error") => {
+                        let msg = obj
+                            .prop("info.error")
+                            .and_then(|e| e.find("localizedMessage").map(|m| m.text.clone()))
+                            .unwrap_or_else(|| "task failed".into());
+                        return Err(msg);
+                    }
+                    _ => {}
+                }
+            }
+
+            if started.elapsed() >= timeout {
+                return Err(format!(
+                    "task did not finish within {}s",
+                    timeout.as_secs()
+                ));
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(750)).await;
+        }
+    }
+
+    /// Every file under a datastore, via its `HostDatastoreBrowser`.
+    ///
+    /// This is the only call in the app that walks a filesystem rather than
+    /// reading inventory, and it is priced accordingly: measured against the
+    /// lab, three VMFS datastores answered in about a second each while a
+    /// 32 TiB vSAN datastore had not finished after ten minutes. Callers are
+    /// expected to treat it as opt-in.
+    pub async fn search_datastore(
+        &self,
+        browser: &str,
+        datastore_path: &str,
+        timeout: std::time::Duration,
+    ) -> Result<Vec<Element>, String> {
+        let body = format!(
+            r#"<vim25:SearchDatastoreSubFolders_Task><vim25:_this type="HostDatastoreBrowser">{}</vim25:_this><vim25:datastorePath>{}</vim25:datastorePath><vim25:searchSpec><vim25:details><vim25:fileType>true</vim25:fileType><vim25:fileSize>true</vim25:fileSize><vim25:modification>true</vim25:modification><vim25:fileOwner>false</vim25:fileOwner></vim25:details><vim25:sortFoldersFirst>true</vim25:sortFoldersFirst></vim25:searchSpec></vim25:SearchDatastoreSubFolders_Task>"#,
+            xml_escape(browser),
+            xml_escape(datastore_path)
+        );
+        let started = self.call(&body).await?;
+        let task = started
+            .find("returnval")
+            .map(|e| e.text.clone())
+            .ok_or("SearchDatastoreSubFolders returned no task")?;
+        let result = self.wait_task(&task, timeout).await?;
+        Ok(result.map(|r| r.children.clone()).unwrap_or_default())
+    }
+
     /// Retrieve properties of **one** managed object, addressed by its own
     /// moref rather than through a ContainerView.
     ///

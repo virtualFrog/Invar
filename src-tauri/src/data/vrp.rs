@@ -120,6 +120,7 @@ pub const SPEC: SheetSpec = SheetSpec {
     rp_props: &[RP_PROPS],
     wants_licenses: false,
     wants_about: false,
+    wants_files: false,
     source: RowSource::None,
     rows,
 };

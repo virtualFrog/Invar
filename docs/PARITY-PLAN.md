@@ -25,7 +25,7 @@ Six of RVTools' 27 sheets exist, five of them as UI sheets and one export-only.
 | vSnapshot | 22 | 13 | Partial |
 | vHealth | 3 | 3 (5 of 7 checks) | Partial |
 | vMetaData | 4 | 4 (export only) | Done |
-| vFileInfo | 5 | 0 | Missing |
+| All 27 sheets | | | Implemented |
 
 Missing entirely: vCPU, vMemory, vPartition, vNetwork, vCD, vUSB, vTools,
 vSource, vRP, vCluster, vHBA, vNIC, vSwitch, vPort, dvSwitch, dvPort, vSC_VMK,
@@ -490,6 +490,36 @@ case this sheet is named for.
 it needs `HostDatastoreBrowser` and `SearchDatastoreSubFolders`, a genuinely
 different API area, and the walk is expensive enough that it should be opt-in
 rather than part of every export. It also unlocks vHealth's `Zombie` check.
+
+### vFileInfo landed, 2026-09-03 — 27 of 27
+
+Unlike vMultiPath, this one really was a blocker, and the measurement is the
+reason it is built the way it is:
+
+| Datastore | Size | Walk |
+|---|---|---|
+| 3 x VMFS | 1.3 TiB each | ~1.1s each, 136 files |
+| vSAN | 32.7 TiB, 164 VMs | **did not finish in 10 minutes** |
+
+So the sheet is opt-in. It is excluded from the export, and each datastore gets
+a 15-second budget. That is deliberately short: a longer wait would be justified
+if waiting eventually worked, and here it does not — the choice is between
+answering quickly with an honest gap and blocking for minutes to reach the same
+gap. A datastore that overruns is named in a warning on this sheet, and the
+others are still shown.
+
+Two mistakes were made building it and are worth recording. The first version
+returned `Err` when a datastore overran, which threw away the datastores that
+had answered — the exact "fail everything" behaviour the architecture notes warn
+against. The second attached the warning to all 25 tables, telling 24 sheets
+about a datastore they never read; noise is how a real warning gets ignored.
+Both were caught by running the thing rather than by reading it.
+
+`SearchDatastoreSubFolders_Task` is also the first *task* the app makes, so
+`SoapClient` grew `wait_task` alongside `search_datastore`.
+
+**All 27 sheets now exist.** vHealth's `Zombie` check is the remaining piece of
+RVTools behaviour that this unlocks and which is still unimplemented.
 
 ### Phase 6: app-level parity
 

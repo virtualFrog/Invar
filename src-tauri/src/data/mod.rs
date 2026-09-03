@@ -17,6 +17,7 @@ pub mod vcluster;
 pub mod vcpu;
 pub mod vdatastore;
 pub mod vdisk;
+pub mod vfileinfo;
 pub mod vhba;
 pub mod vhealth;
 pub mod vhost;
@@ -70,6 +71,7 @@ pub const SHEETS: &[&SheetSpec] = &[
     &vsc_vmk::SPEC,
     &vdatastore::SPEC,
     &vmultipath::SPEC,
+    &vfileinfo::SPEC,
     &vlicense::SPEC,
     &vhealth::SPEC,
 ];

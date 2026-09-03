@@ -27,7 +27,12 @@ async fn main() {
     let servers: Vec<String> = cfg.connections.iter().map(|c| c.label()).collect();
 
     let started = std::time::Instant::now();
-    let tables = data::snapshot::fetch_tables(data::SHEETS, &cfg.connections, &cache).await;
+    // The same exclusion the app's export makes: sheets needing a datastore
+    // file walk are not part of "fetch everything". Without this the probe
+    // measures something the product never does.
+    let sheets: Vec<&data::snapshot::SheetSpec> =
+        data::SHEETS.iter().copied().filter(|s| !s.wants_files).collect();
+    let tables = data::snapshot::fetch_tables(&sheets, &cfg.connections, &cache).await;
     let elapsed = started.elapsed();
 
     for t in &tables {

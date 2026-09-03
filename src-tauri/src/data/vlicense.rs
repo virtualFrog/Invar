@@ -74,6 +74,7 @@ pub const SPEC: SheetSpec = SheetSpec {
     rp_props: &[],
     wants_licenses: true,
     wants_about: false,
+    wants_files: false,
     source: RowSource::None,
     rows,
 };
