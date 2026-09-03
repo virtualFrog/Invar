@@ -411,19 +411,28 @@ td.empty::after {
 }
 
 .gauge-wrap { display: flex; align-items: center; gap: 16px; }
-.gauge { width: 96px; height: 96px; flex: none; }
+.gauge { width: 116px; height: 116px; flex: none; }
 .gauge-track { fill: none; stroke: var(--hairline); stroke-width: 9; }
 .gauge-fill { fill: none; stroke: var(--accent); stroke-width: 9; stroke-linecap: round; transition: stroke-dasharray 0.3s ease; }
 .gauge-fill.warn { stroke: var(--warning); }
 .gauge-fill.crit { stroke: var(--danger); }
+/* SVG text anchors at its start, not its middle. Both of these are positioned
+ * at the centre of the dial, so without text-anchor they spill to the right and
+ * collide with each other. */
 .gauge-pct {
   font-family: var(--mono);
-  font-size: 17px;
+  font-size: 23px;
   font-weight: 600;
   fill: var(--text);
   font-variant-numeric: tabular-nums;
+  text-anchor: middle;
 }
-.gauge-cap { font-size: 8px; fill: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em; }
+.gauge-cap {
+  font-size: 9px;
+  fill: var(--text-faint);
+  text-anchor: middle;
+  letter-spacing: 0.08em;
+}
 
 .stat-list { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .stat { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
@@ -468,6 +477,58 @@ td.empty::after {
 }
 .pill.warn { background: color-mix(in srgb, var(--warning) 20%, transparent); color: var(--warning); }
 .pill.crit { background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); }
+
+/* ------------------------------------------------------------- scrollbars */
+
+/* WebView2 is Chromium, so the -webkit- rules are the ones that actually apply;
+ * the standard properties are there for anything else that hosts this. The
+ * scrollbar on a 25-sheet table is a position indicator people use constantly,
+ * so it is thin and quiet but always visible rather than an overlay that has to
+ * be hunted for. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 6px;
+  /* Inset by a transparent border so the thumb reads as a slim bar rather than
+   * filling the gutter edge to edge. */
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-ghost);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:active {
+  background: var(--accent);
+  background-clip: padding-box;
+}
+
+/* Where the two bars meet, and the wedge under a sticky header. */
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* The table is the one place both axes scroll at once; give its gutters a
+ * faint ground so the thumb has something to travel along. */
+.table-wrap::-webkit-scrollbar-track {
+  background: var(--sidebar-bg);
+  border-left: 1px solid var(--hairline);
+}
+.table-wrap::-webkit-scrollbar-track:horizontal {
+  border-left: 0;
+  border-top: 1px solid var(--hairline);
+}
 
 /* ----------------------------------------------------------------- dialog */
 
