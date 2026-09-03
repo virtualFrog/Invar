@@ -172,14 +172,31 @@ list before "fixing" an empty column.**
 | vMemory | `Overhead` | column absent | `runtime.memoryOverhead` was returned for **no** VM, so the column is not implemented rather than shipped always-empty. |
 | vUSB | all | 1 row | Only `sttools-fixture-01` has a `VirtualUSB` device; the lab's other USB entries are *controllers*, which are not devices and are deliberately not rows. |
 
-### Host networking is entirely distributed
+### Host networking is distributed, plus one switch built for testing
 
-There is **no standard vSwitch and no standard port group** anywhere in this
-lab: `config.network.vswitch` and `config.network.portgroup` return empty arrays
-on all three hosts. RVTools' `vSwitch` and `vPort` sheets are therefore always
-empty here, and their parsing is exercised only by explicitly-marked synthetic
-tests. Everything runs on one distributed switch, `vcf-mgmt-cl01-vds01`
-(`dvs-20`), with 60 port groups.
+Production networking here is entirely distributed: one switch,
+`vcf-mgmt-cl01-vds01` (`dvs-20`), with 60 port groups. No host had a standard
+vSwitch or port group at all, so RVTools' `vSwitch` and `vPort` sheets parsed
+nothing.
+
+`sttools-vSwitch` and its port group `sttools-pg` (VLAN 101) were created on
+**esx01 only** to fix that. The switch is **isolated — no physical NIC is
+attached** — so it carries no traffic and cannot affect existing networking.
+Both sheets now have one real row each.
+
+To remove them, on `networkSystem-12`:
+`RemovePortGroup(pgName="sttools-pg")` then
+`RemoveVirtualSwitch(vswitchName="sttools-vSwitch")`. Doing so returns vSwitch
+and vPort to zero rows.
+
+Two things the real switch taught, both now in the code:
+
+- `numPorts` is the **elastic** count ESXi allocated (9216), not the 128 that
+  was requested; the request survives separately under `spec/numPorts`.
+- A port group's effective settings are in `computedPolicy`, not `spec/policy`.
+  `sttools-pg` sets only security and inherits teaming from the switch, so
+  `spec/policy` has no `nicTeaming` at all and reading it would have left the
+  `Policy` column empty.
 
 Two more partial columns worth knowing before they look like defects:
 

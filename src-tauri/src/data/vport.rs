@@ -2,13 +2,15 @@
 //!
 //! Reads `config.network.portgroup` off the shared host snapshot.
 //!
-//! # Zero rows in the reference lab
+//! Policy comes from `computedPolicy` rather than `spec/policy`: the former is
+//! the effective configuration, the latter only what was explicitly set on the
+//! group. A port group that inherits its teaming from the switch has no
+//! `nicTeaming` under `spec/policy` at all.
 //!
-//! Like vSwitch, this is empty there: the hosts have no standard switch, so
-//! they have no standard port group either (`config.network.portgroup` returns
-//! an empty array on all three). The path is verified as returned-but-empty;
-//! the element shape follows the vim25 schema rather than an observed
-//! `HostPortGroup`. Distributed port groups are the `dvPort` sheet.
+//! The lab is otherwise entirely distributed-switched, so a standard switch and
+//! port group were created on one host purely so this sheet has something real
+//! to parse (`sttools-vSwitch` / `sttools-pg`, see `docs/LAB-ENVIRONMENT.md`).
+//! Distributed port groups are a different sheet, `dvPort`.
 
 use super::hostnet::HOST_NET_PROPS;
 use super::snapshot::{InventorySnapshot, RowSource, SheetSpec};
@@ -47,7 +49,15 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String
 
         for pg in host.array_prop("config.network.portgroup") {
             let spec = pg.child("spec");
-            let policy = spec.and_then(|s| s.child("policy"));
+            // `computedPolicy` is what actually applies: the port group's own
+            // settings merged with what it inherits from the switch.
+            // `spec/policy` holds only what was explicitly set, so teaming that
+            // came from the switch would read as empty. Verified against a real
+            // port group, whose spec carries security but no nicTeaming while
+            // computedPolicy carries both.
+            let policy = pg
+                .child("computedPolicy")
+                .or_else(|| spec.and_then(|s| s.child("policy")));
             let b = |p: &str| {
                 policy.and_then(|x| x.text_at(p)).map(|v| v == "true")
             };
@@ -107,45 +117,62 @@ pub async fn fetch_vport_all(
 mod tests {
     use super::*;
     use crate::data::snapshot::test_support::{captured_snapshot, cells, col};
-    use crate::data::snapshot::InventorySnapshot;
-    use crate::vcenter::soap::ManagedObject;
-    use crate::vcenter::xml;
 
-    #[test]
-    fn the_captured_hosts_have_no_standard_port_group() {
-        let snap = captured_snapshot();
-        for h in &snap.hosts {
-            assert!(h.array_prop("config.network.portgroup").is_empty());
-        }
-        assert!(cells(rows(&snap).expect("named host")).is_empty());
+    fn at(row: &[Cell], label: &str) -> Cell {
+        row[col(&columns(), label)].clone()
     }
 
-    /// Synthetic, and marked as such: the lab has no standard port group, so
-    /// this asserts the documented schema shape rather than a capture.
     #[test]
-    fn a_standard_port_group_becomes_a_row_synthetic_shape() {
-        let fragment = r#"<objects><obj type="HostSystem">host-1</obj>
-          <propSet><name>name</name><val>esx1</val></propSet>
-          <propSet><name>config.network.portgroup</name><val>
-            <HostPortGroup>
-              <spec><name>Management Network</name><vswitchName>vSwitch0</vswitchName>
-                <vlanId>0</vlanId>
-                <policy>
-                  <security><allowPromiscuous>false</allowPromiscuous>
-                    <macChanges>false</macChanges><forgedTransmits>false</forgedTransmits></security>
-                  <nicTeaming><policy>loadbalance_srcid</policy></nicTeaming>
-                  <shapingPolicy><enabled>false</enabled></shapingPolicy>
-                </policy>
-              </spec>
-            </HostPortGroup>
-          </val></propSet></objects>"#;
-        let host = ManagedObject::from_element(&xml::parse(fragment).expect("parses"));
-        let snap = InventorySnapshot::from_parts(Vec::new(), vec![host]);
-        let rows = cells(rows(&snap).expect("named host"));
+    fn one_row_per_standard_port_group() {
+        let rows = cells(rows(&captured_snapshot()).expect("named host"));
         assert_eq!(rows.len(), 1);
-        let at = |l: &str| rows[0][col(&columns(), l)].clone();
-        assert!(matches!(at("Port Group"), Cell::Text(ref s) if s == "Management Network"));
-        assert!(matches!(at("Switch"), Cell::Text(ref s) if s == "vSwitch0"));
-        assert!(matches!(at("VLAN"), Cell::Number(n) if n == 0.0));
+        let r = &rows[0];
+        assert!(matches!(at(r, "Port Group"), Cell::Text(ref s) if s == "sttools-pg"));
+        assert!(matches!(at(r, "Switch"), Cell::Text(ref s) if s == "sttools-vSwitch"));
+        assert!(matches!(at(r, "VLAN"), Cell::Number(n) if n == 101.0));
+    }
+
+    /// The group's own security settings come through.
+    #[test]
+    fn explicit_settings_are_reported() {
+        let rows = cells(rows(&captured_snapshot()).expect("named host"));
+        let r = &rows[0];
+        assert!(matches!(at(r, "Promiscuous Mode"), Cell::Bool(true)));
+        assert!(matches!(at(r, "Mac Changes"), Cell::Bool(false)));
+        assert!(matches!(at(r, "Forged Transmits"), Cell::Bool(true)));
+    }
+
+    /// Teaming was never set on this port group -- it inherits the switch's. It
+    /// appears in `computedPolicy` and **not** in `spec/policy`, so reading the
+    /// spec would leave the column empty. This is the reason the sheet reads
+    /// computedPolicy, and it is asserted rather than assumed.
+    #[test]
+    fn inherited_policy_comes_from_computed_policy_not_the_spec() {
+        let snap = captured_snapshot();
+        let pg = snap
+            .hosts
+            .iter()
+            .flat_map(|h| h.array_prop("config.network.portgroup"))
+            .next()
+            .expect("the captured port group");
+        assert!(
+            pg.child("spec").and_then(|s| s.child("policy")).and_then(|p| p.child("nicTeaming")).is_none(),
+            "the spec should carry no teaming -- that is the point of this test"
+        );
+        let rows = cells(rows(&snap).expect("named host"));
+        assert!(
+            matches!(at(&rows[0], "Policy"), Cell::Text(ref s) if s == "loadbalance_srcid"),
+            "inherited teaming must still be reported, got {:?}",
+            at(&rows[0], "Policy")
+        );
+    }
+
+    /// A distributed port group is the `dvPort` sheet, never a vPort row.
+    #[test]
+    fn distributed_port_groups_are_not_rows() {
+        let snap = captured_snapshot();
+        let standard: usize =
+            snap.hosts.iter().map(|h| h.array_prop("config.network.portgroup").len()).sum();
+        assert_eq!(cells(rows(&snap).expect("named host")).len(), standard);
     }
 }

@@ -288,18 +288,25 @@ only), because dvPort references its switch by moref and a `Network` view does
 **not** return switches — only portgroups, which are a Network subclass. Without
 that, dvPort's Switch column would have shown `dvs-20`.
 
-Live row counts: vHBA 3, vNIC 18, vSwitch 0, vPort 0, dvSwitch 1, dvPort 60,
+Live row counts: vHBA 3, vNIC 18, vSwitch 1, vPort 1, dvSwitch 1, dvPort 60,
 vSC_VMK 18.
 
-**vSwitch and vPort are zero, and that is the environment, not the code.** These
-hosts run entirely on a distributed switch: `config.network.vswitch` and
-`config.network.portgroup` both return empty arrays on all three. The property
-paths are verified as returned-but-empty, but the element shapes follow the
-vim25 schema rather than an observed response, and both modules say so. Each
-carries one synthetic test, explicitly marked, so the parsing is exercised at
-all. A host's view of a distributed switch is a `proxySwitch` and is
-deliberately *not* counted as a standard switch — RVTools separates them, and
-merging would double-report the same networking.
+**vSwitch and vPort had nothing to parse**, because these hosts run entirely on
+a distributed switch and both properties returned empty arrays. Rather than ship
+two sheets verified only by hand-written XML, an isolated standard switch and
+port group were created on one host (`sttools-vSwitch` / `sttools-pg`, no
+uplinks, see `docs/LAB-ENVIRONMENT.md`). Both sheets now have a real row.
+
+That immediately corrected the port-group reader. A `HostPortGroup` carries
+`computedPolicy` — the effective settings, including what it inherits from the
+switch — alongside `spec/policy`, which holds only what was explicitly set. The
+first implementation read the spec, so a group inheriting its teaming showed an
+empty `Policy`. Also learned: `numPorts` on a switch is the elastic count ESXi
+allocated, not the number requested.
+
+A host's view of a distributed switch is a `proxySwitch` and is deliberately
+*not* counted as a standard switch — RVTools separates them, and merging would
+double-report the same networking.
 
 Partial columns, all explained rather than left to look like bugs: vNIC's Speed,
 Duplex, Switch and Uplink port are populated for 6 of 18 NICs, because only two
@@ -307,7 +314,7 @@ per host are cabled and `linkSpeed` is sent only for a link that is up;
 vSC_VMK's Port Group is 9 of 18, because the NSX `vxlan` and `hyperbus`
 VMkernel ports sit on no port group.
 
-Test count 80 to 104.
+Test count 80 to 107.
 
 ### Phase 3: infrastructure sheets
 
