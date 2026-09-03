@@ -90,6 +90,18 @@ impl PathIndex {
             .then(|| self.nodes.get(parent).map(|n| n.name.clone()))?
     }
 
+    /// The name of any indexed object, by moref.
+    ///
+    /// vNetwork uses this to resolve a NIC's portgroup reference: a
+    /// distributed-port backing names its portgroup by moref
+    /// (`dvportgroup-9335`), never by name.
+    pub fn name_of(&self, moref: &str) -> Option<String> {
+        self.nodes
+            .get(moref)
+            .map(|n| n.name.clone())
+            .filter(|n| !n.is_empty())
+    }
+
     /// A VM's cluster, reached through the host it runs on.
     pub fn cluster_of_vm(&self, vm_moref: &str) -> Option<String> {
         let host = self.nodes.get(vm_moref)?.host.as_ref()?;
@@ -147,11 +159,18 @@ impl InventorySnapshot {
             session.soap.retrieve("VirtualMachine", &vm_props).await?
         };
 
-        // One walk covers all three container types; a ComputeResource view
-        // also returns ClusterComputeResource, its subclass.
+        // One walk covers every container type. A ComputeResource view also
+        // returns ClusterComputeResource, and a Network view also returns
+        // DistributedVirtualPortgroup — both subclasses, so neither needs a
+        // query of its own. `Network` is here so vNetwork can turn a NIC's
+        // portgroup moref into the name RVTools shows. All four types carry
+        // `name` and `parent`, which is why one shared pathSet works.
         let containers = session
             .soap
-            .retrieve_types(&["Folder", "Datacenter", "ComputeResource"], &["name", "parent"])
+            .retrieve_types(
+                &["Folder", "Datacenter", "ComputeResource", "Network"],
+                &["name", "parent"],
+            )
             .await?;
 
         let host_names = hosts

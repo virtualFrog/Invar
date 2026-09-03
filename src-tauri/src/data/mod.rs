@@ -6,14 +6,21 @@
 //! into ~24 per-table definitions.
 
 pub mod common;
+pub mod insights;
+pub mod snapshot;
+pub mod topology;
+pub mod vcd;
+pub mod vcpu;
 pub mod vdisk;
 pub mod vhealth;
 pub mod vhost;
 pub mod vinfo;
-pub mod insights;
-pub mod snapshot;
-pub mod topology;
+pub mod vmemory;
+pub mod vnetwork;
+pub mod vpartition;
 pub mod vsnapshot;
+pub mod vtools;
+pub mod vusb;
 
 use serde::Serialize;
 use snapshot::SheetSpec;
@@ -22,11 +29,21 @@ use snapshot::SheetSpec;
 ///
 /// This is the single registry: `list_sheets`, `fetch_sheet` and the export all
 /// drive off it, so adding a sheet is one module plus one line here.
+/// RVTools' own sheet order, so tabs and the export line up with a real
+/// RVTools workbook. `export.rs` re-orders anyway via `RVTOOLS_SHEET_ORDER`;
+/// this is what the UI shows.
 pub const SHEETS: &[&SheetSpec] = &[
     &vinfo::SPEC,
-    &vhost::SPEC,
+    &vcpu::SPEC,
+    &vmemory::SPEC,
     &vdisk::SPEC,
+    &vpartition::SPEC,
+    &vnetwork::SPEC,
+    &vcd::SPEC,
+    &vusb::SPEC,
     &vsnapshot::SPEC,
+    &vtools::SPEC,
+    &vhost::SPEC,
     &vhealth::SPEC,
 ];
 
