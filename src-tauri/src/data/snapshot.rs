@@ -210,6 +210,53 @@ pub mod test_support {
         object("HostSystem", moref, props)
     }
 
+    // ---- real captures -------------------------------------------------
+    //
+    // Each of these is one `<objects>` element lifted verbatim out of a live
+    // `RetrievePropertiesEx` response, with identifying values replaced
+    // (hostnames, IPs, chassis serials, UUIDs). Element names, `xsi:type`
+    // attributes, nesting and ordering are exactly what vCenter returned, which
+    // is the whole point: hand-written fragments only prove the parser handles
+    // shapes we already imagined. The `xmlns:xsi` declaration rode on the SOAP
+    // envelope in the original and is re-declared on the fragment root so each
+    // file parses standalone.
+    //
+    // Captured 2026-09-03 from the lab in `docs/LAB-ENVIRONMENT.md`.
+
+    /// 6 disks across two controllers, with `storageIOAllocation` on each.
+    pub const VM_MULTI_DISK: &str = include_str!("fixtures/vm_multi_disk.xml");
+    /// One snapshot, and a name containing spaces and parentheses.
+    pub const VM_SNAPSHOTS: &str = include_str!("fixtures/vm_snapshots.xml");
+    /// A `VirtualCdrom` that is actually connected.
+    pub const VM_CONNECTED_CDROM: &str = include_str!("fixtures/vm_connected_cdrom.xml");
+    /// `config.template = true`, powered off, `.vmtx` rather than `.vmx`.
+    pub const VM_TEMPLATE: &str = include_str!("fixtures/vm_template.xml");
+    /// A host with all 40 properties vHost and vHealth read.
+    pub const HOST_FULL: &str = include_str!("fixtures/host_full.xml");
+
+    /// Parse one captured `<objects>` element.
+    pub fn captured(xml: &str) -> ManagedObject {
+        ManagedObject::from_element(&xml::parse(xml).expect("captured fixture parses"))
+    }
+
+    /// A snapshot assembled from the real captures: four VMs and one host.
+    ///
+    /// Only `VM_SNAPSHOTS` sits on the captured host (`host-12`); the other
+    /// three reference `host-28`, which is deliberately absent, so the
+    /// unresolved-moref fallback is exercised by real data rather than by a
+    /// contrived moref.
+    pub fn captured_snapshot() -> InventorySnapshot {
+        InventorySnapshot::from_parts(
+            vec![
+                captured(VM_MULTI_DISK),
+                captured(VM_SNAPSHOTS),
+                captured(VM_CONNECTED_CDROM),
+                captured(VM_TEMPLATE),
+            ],
+            vec![captured(HOST_FULL)],
+        )
+    }
+
     /// Index of a column by its RVTools label, so tests never hard-code a
     /// position that a new column would silently shift.
     pub fn col(columns: &[Column], label: &str) -> usize {

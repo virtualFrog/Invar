@@ -205,3 +205,36 @@ mod tests {
         assert_eq!(out[2].create_time, None);
     }
 }
+
+/// vSnapshot over real captured responses.
+#[cfg(test)]
+mod captured_tests {
+    use super::*;
+    use crate::data::snapshot::test_support::{captured_snapshot, col};
+
+    /// One of the four captured VMs carries a snapshot, so the sheet is one
+    /// row: vSnapshot is per-snapshot, not per-VM.
+    #[test]
+    fn only_vms_with_snapshots_produce_rows() {
+        let rows = rows(&captured_snapshot()).expect("named VMs");
+        assert_eq!(rows.len(), 1);
+        let vm = &rows[0][col(&columns(), "VM")];
+        assert!(matches!(vm, Cell::Text(n) if n == "vSAN File Service Node (1)"));
+    }
+
+    /// `snapshot.rootSnapshotList` is a `VirtualMachineSnapshotTree[]`, so its
+    /// elements carry the TYPE name. Reading the field name instead yields zero
+    /// rows and no error, which is the failure this capture exists to catch.
+    #[test]
+    fn the_snapshot_fields_come_off_the_tree_element() {
+        let rows = rows(&captured_snapshot()).expect("named VMs");
+        let at = |l: &str| rows[0][col(&columns(), l)].clone();
+        assert!(matches!(at("Name"), Cell::Text(ref s) if s == "eam-snapshot"));
+        // `state` is the VM's power state at the moment the snapshot was taken,
+        // not its state now: this VM is running, but the snapshot records
+        // poweredOff. A hand-written fixture would very likely have mirrored
+        // the VM's current state and quietly encoded the wrong meaning.
+        assert!(matches!(at("State"), Cell::Text(ref s) if s == "poweredOff"));
+        assert!(matches!(at("Date / time"), Cell::Text(_)));
+    }
+}

@@ -264,3 +264,70 @@ mod tests {
         assert!(matches!(cell(&built, 0, "Provisioned GiB"), Cell::Empty));
     }
 }
+
+/// vInfo over real captured `RetrievePropertiesEx` responses.
+#[cfg(test)]
+mod captured_tests {
+    use super::*;
+    use crate::data::snapshot::test_support::{captured_snapshot, col};
+
+    fn row_for<'a>(rows: &'a [Vec<Cell>], vm: &str) -> &'a Vec<Cell> {
+        let i = col(&columns(), "VM");
+        rows.iter()
+            .find(|r| matches!(&r[i], Cell::Text(n) if n == vm))
+            .unwrap_or_else(|| panic!("no row for {vm}"))
+    }
+
+    #[test]
+    fn one_row_per_captured_vm() {
+        let rows = rows(&captured_snapshot()).expect("captured VMs all have names");
+        assert_eq!(rows.len(), 4);
+    }
+
+    /// A template is still a vInfo row. RVTools counts templates, which is why
+    /// SOAP's 161 rather than REST's 154 is the right VM total for this lab.
+    #[test]
+    fn a_template_is_a_row_and_is_flagged() {
+        let rows = rows(&captured_snapshot()).expect("named VMs");
+        let r = row_for(&rows, "Windows Server 2025");
+        assert!(matches!(r[col(&columns(), "Template")], Cell::Bool(true)));
+        assert!(matches!(&r[col(&columns(), "Powerstate")], Cell::Text(s) if s == "poweredOff"));
+    }
+
+    /// `runtime.host` is a moref. Only the captured host resolves to a name;
+    /// the other captures reference a host absent from the snapshot, so they
+    /// fall back to the raw moref rather than inventing a name or dropping the
+    /// row.
+    #[test]
+    fn host_resolves_when_present_and_falls_back_when_not() {
+        let rows = rows(&captured_snapshot()).expect("named VMs");
+        let on_host = row_for(&rows, "vSAN File Service Node (1)");
+        assert!(
+            matches!(&on_host[col(&columns(), "Host")], Cell::Text(h) if h == "esx01.lab.local")
+        );
+        let elsewhere = row_for(&rows, "appliance01");
+        assert!(
+            matches!(&elsewhere[col(&columns(), "Host")], Cell::Text(h) if h == "host-28"),
+            "an unresolved moref is reported as-is"
+        );
+    }
+
+    /// A name carrying spaces and parentheses survives the XML round trip.
+    #[test]
+    fn a_name_with_spaces_and_parentheses_survives() {
+        let rows = rows(&captured_snapshot()).expect("named VMs");
+        let r = row_for(&rows, "vSAN File Service Node (1)");
+        assert!(matches!(&r[col(&columns(), "HW version")], Cell::Text(v) if v == "vmx-21"));
+    }
+
+    #[test]
+    fn hardware_columns_match_the_capture() {
+        let rows = rows(&captured_snapshot()).expect("named VMs");
+        let r = row_for(&rows, "appliance01");
+        let at = |l: &str| r[col(&columns(), l)].clone();
+        assert!(matches!(at("CPUs"), Cell::Number(n) if n == 4.0));
+        assert!(matches!(at("Cores p/s"), Cell::Number(n) if n == 1.0));
+        assert!(matches!(at("Memory"), Cell::Number(n) if n == 16384.0));
+        assert!(matches!(at("Firmware"), Cell::Text(ref s) if s == "efi"));
+    }
+}

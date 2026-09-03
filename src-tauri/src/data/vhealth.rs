@@ -364,3 +364,72 @@ mod tests {
         assert!(rows.is_empty());
     }
 }
+
+/// vHealth over real captured responses.
+#[cfg(test)]
+mod captured_tests {
+    use super::*;
+    use crate::data::snapshot::test_support::captured_snapshot;
+
+    fn findings(rows: &[Vec<Cell>]) -> Vec<(String, String)> {
+        rows.iter()
+            .map(|r| match (&r[2], &r[0]) {
+                (Cell::Text(kind), Cell::Text(name)) => (kind.clone(), name.clone()),
+                _ => panic!("name and type are always text"),
+            })
+            .collect()
+    }
+
+    /// The captured host is healthy (NTP configured, ntpd running), so every
+    /// finding comes from a VM.
+    #[test]
+    fn a_healthy_captured_host_contributes_no_findings() {
+        let rows = rows(&captured_snapshot()).expect("named objects");
+        let f = findings(&rows);
+        assert!(
+            !f.iter().any(|(kind, _)| kind == "NTP" || kind == "NTPD"),
+            "captured host has NTP set and ntpd running, got {f:?}"
+        );
+    }
+
+    /// On vSAN every VM folder is an object UUID, so it can never equal the VM
+    /// name and the check fires for all four captures. That is RVTools' rule
+    /// reproduced faithfully, not a defect. See docs/LAB-ENVIRONMENT.md.
+    #[test]
+    fn vsan_uuid_folders_trip_foldername_for_every_vm() {
+        let rows = rows(&captured_snapshot()).expect("named objects");
+        let folder: Vec<_> = findings(&rows)
+            .into_iter()
+            .filter(|(kind, _)| kind == "Foldername")
+            .collect();
+        assert_eq!(folder.len(), 4, "got {folder:?}");
+    }
+
+    /// One capture has a connected CD-ROM. The others carry a disconnected
+    /// `VirtualCdrom`, and every VM carries NICs that have their own
+    /// `connectable` block; filtering on `connectable` alone would report those
+    /// too.
+    #[test]
+    fn only_the_connected_cdrom_is_reported() {
+        let rows = rows(&captured_snapshot()).expect("named objects");
+        let cd: Vec<_> = findings(&rows).into_iter().filter(|(k, _)| k == "CDROM").collect();
+        assert_eq!(cd.len(), 1, "got {cd:?}");
+        assert_eq!(cd[0].1, "k8s-controller-01");
+    }
+
+    #[test]
+    fn the_captured_snapshot_is_reported_once() {
+        let rows = rows(&captured_snapshot()).expect("named objects");
+        let snaps: Vec<_> =
+            findings(&rows).into_iter().filter(|(k, _)| k == "Snapshot").collect();
+        assert_eq!(snaps.len(), 1, "got {snaps:?}");
+        assert_eq!(snaps[0].1, "vSAN File Service Node (1)");
+    }
+
+    /// 4 Foldername + 1 CDROM + 1 Snapshot, and nothing from the host.
+    #[test]
+    fn total_findings_for_the_capture() {
+        let rows = rows(&captured_snapshot()).expect("named objects");
+        assert_eq!(rows.len(), 6);
+    }
+}

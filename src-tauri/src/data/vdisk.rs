@@ -146,3 +146,103 @@ pub async fn fetch_vdisk_all(
 ) -> Table {
     super::snapshot::fetch_table(&SPEC, conns, cache).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::snapshot::test_support::{captured, captured_snapshot, col, VM_MULTI_DISK};
+
+    fn cell(rows: &[Vec<Cell>], row: usize, label: &str) -> Cell {
+        rows[row][col(&columns(), label)].clone()
+    }
+
+    fn text_of(c: &Cell) -> Option<&str> {
+        match c {
+            Cell::Text(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// The whole sheet over real captures: four VMs carrying 6 + 3 + 1 + 1
+    /// disks. A hand-written fragment would only ever prove we can parse the
+    /// shape we imagined.
+    #[test]
+    fn every_virtual_disk_in_the_capture_becomes_a_row() {
+        let rows = rows(&captured_snapshot()).expect("captured VMs all have names");
+        assert_eq!(rows.len(), 11);
+    }
+
+    /// `config.hardware.device` is a `VirtualDevice[]`, so vim25 names its
+    /// elements after the declared type and distinguishes the real one with
+    /// `xsi:type`. The capture carries controllers, NICs, keyboard and video
+    /// card alongside the disks; only the disks may become rows.
+    #[test]
+    fn non_disk_devices_in_the_same_array_are_not_rows() {
+        let vm = captured(VM_MULTI_DISK);
+        let devices = vm.array_prop("config.hardware.device");
+        assert!(
+            devices.len() > 6,
+            "capture should carry more devices than just its 6 disks, got {}",
+            devices.len()
+        );
+        let snap = crate::data::snapshot::InventorySnapshot::from_parts(vec![vm], Vec::new());
+        assert_eq!(rows(&snap).expect("named VM").len(), 6);
+    }
+
+    /// capacityInKB is KiB; RVTools' column is MiB. 33554432 KiB = 32768 MiB.
+    #[test]
+    fn capacity_is_converted_from_kib_to_the_mib_column() {
+        let snap =
+            crate::data::snapshot::InventorySnapshot::from_parts(vec![captured(VM_MULTI_DISK)], Vec::new());
+        let rows = rows(&snap).expect("named VM");
+        assert_eq!(text_of(&cell(&rows, 0, "Disk")), Some("Hard disk 1"));
+        assert!(matches!(cell(&rows, 0, "Capacity MiB"), Cell::Number(n) if n == 32768.0));
+    }
+
+    /// A disk's controller is resolved through `controllerKey` into the
+    /// controller device's own label.
+    #[test]
+    fn a_disk_names_the_controller_it_hangs_off() {
+        let snap =
+            crate::data::snapshot::InventorySnapshot::from_parts(vec![captured(VM_MULTI_DISK)], Vec::new());
+        let rows = rows(&snap).expect("named VM");
+        let controller = cell(&rows, 0, "Controller");
+        let controller = text_of(&controller).expect("controller resolves to a label");
+        assert!(
+            controller.contains("SCSI controller"),
+            "expected a SCSI controller label, got {controller:?}"
+        );
+    }
+
+    /// No RDM exists in the lab, so every captured disk is flat-file backed and
+    /// the raw-mapping columns stay empty. Documented in
+    /// `docs/LAB-ENVIRONMENT.md` as expected rather than a gap.
+    #[test]
+    fn flat_backed_disks_report_no_raw_mapping() {
+        let snap =
+            crate::data::snapshot::InventorySnapshot::from_parts(vec![captured(VM_MULTI_DISK)], Vec::new());
+        let rows = rows(&snap).expect("named VM");
+        for (i, _) in rows.iter().enumerate() {
+            assert!(matches!(cell(&rows, i, "Raw"), Cell::Bool(false)));
+            assert!(matches!(cell(&rows, i, "Raw LUN ID"), Cell::Empty));
+            assert!(matches!(cell(&rows, i, "Raw Comp. Mode"), Cell::Empty));
+        }
+    }
+
+    /// `storageIOAllocation` is nested inside the disk, so its `shares` block
+    /// repeats the FIELD name rather than the type name -- the exception to the
+    /// top-level array rule in CLAUDE.md. Reading it wrong yields empty cells,
+    /// not an error, which is why this asserts against a real capture.
+    #[test]
+    fn storage_io_allocation_is_read_from_the_nested_shares_block() {
+        let snap =
+            crate::data::snapshot::InventorySnapshot::from_parts(vec![captured(VM_MULTI_DISK)], Vec::new());
+        let rows = rows(&snap).expect("named VM");
+        assert!(
+            matches!(cell(&rows, 0, "Shares"), Cell::Number(n) if n > 0.0),
+            "shares should come through as a number, got {:?}",
+            cell(&rows, 0, "Shares")
+        );
+        assert!(text_of(&cell(&rows, 0, "Level")).is_some(), "level should be populated");
+    }
+}

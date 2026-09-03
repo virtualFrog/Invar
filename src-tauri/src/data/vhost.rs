@@ -381,3 +381,59 @@ mod tests {
         assert!(err.contains("host-9"), "the error names the object: {err}");
     }
 }
+
+/// vHost over a real captured `HostSystem` response.
+#[cfg(test)]
+mod captured_tests {
+    use super::*;
+    use crate::data::snapshot::test_support::{captured_snapshot, col};
+
+    fn at(rows: &[Vec<Cell>], label: &str) -> Cell {
+        rows[0][col(&columns(), label)].clone()
+    }
+
+    #[test]
+    fn one_row_per_captured_host() {
+        let rows = rows(&captured_snapshot()).expect("captured host has a name");
+        assert_eq!(rows.len(), 1);
+        assert!(matches!(at(&rows, "Host"), Cell::Text(ref s) if s == "esx01.lab.local"));
+    }
+
+    #[test]
+    fn hardware_columns_match_the_capture() {
+        let rows = rows(&captured_snapshot()).expect("named host");
+        assert!(matches!(at(&rows, "Vendor"), Cell::Text(ref s) if s == "HPE"));
+        assert!(matches!(at(&rows, "Model"), Cell::Text(ref s) if s == "ProLiant DL380 Gen10"));
+        assert!(matches!(at(&rows, "# Cores"), Cell::Number(n) if n == 48.0));
+        assert!(
+            matches!(at(&rows, "ESX Version"), Cell::Text(ref s) if s.starts_with("VMware ESXi 9.1.0"))
+        );
+        // 824269418496 bytes, converted to GiB and rounded to two places.
+        assert!(matches!(at(&rows, "# Memory GiB"), Cell::Number(n) if (n - 767.66).abs() < 0.01));
+    }
+
+    /// `config.service.service` is an array of `HostService`; ntpd is found by
+    /// its `key`, never by position.
+    #[test]
+    fn ntpd_state_is_read_from_the_service_array() {
+        let rows = rows(&captured_snapshot()).expect("named host");
+        assert!(matches!(at(&rows, "NTPD running"), Cell::Bool(true)));
+        assert!(matches!(at(&rows, "NTP Server(s)"), Cell::Text(ref s) if !s.is_empty()));
+    }
+
+    /// Memory tiering reports DRAM only in this lab, so the NVMe tier column is
+    /// empty by fact rather than by parse failure. See docs/LAB-ENVIRONMENT.md.
+    #[test]
+    fn a_dram_only_host_reports_no_nvme_tier() {
+        let rows = rows(&captured_snapshot()).expect("named host");
+        assert!(matches!(at(&rows, "NVMe Tier GiB"), Cell::Empty));
+    }
+
+    /// Only the VM whose `runtime.host` matches the captured host counts toward
+    /// its rollup; the other three captures point at an absent host.
+    #[test]
+    fn vm_rollup_counts_only_vms_on_that_host() {
+        let rows = rows(&captured_snapshot()).expect("named host");
+        assert!(matches!(at(&rows, "# VMs total"), Cell::Number(n) if n == 1.0));
+    }
+}

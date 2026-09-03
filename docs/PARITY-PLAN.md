@@ -92,7 +92,7 @@ Two consequences beyond speed:
 | `InventorySnapshot` and sheets as pure functions over it | Sets the marginal cost of the remaining 21 sheets | L | **Done** |
 | Test harness for sheets without a vCenter | Every later sheet ships with a parse test instead of a live-only check | M | **Done** |
 | Inventory path index: Datacenter, Cluster, Folder | Cross-cutting columns on ~20 sheets, appended generically the way `VI SDK Server` already is (`data/mod.rs`). Needs `parent` walks over `Folder`, `Datacenter`, `ComputeResource`, `ClusterComputeResource`, which is a different query shape than the flat reads used so far | M | Not started (lab now available) |
-| Real captured XML fixtures per object type | Replaces the hand-written fragments the tests use today with real responses | M | Not started (lab now available; raw responses captured) |
+| Real captured XML fixtures per object type | Replaces the hand-written fragments the tests use today with real responses | M | **Done** |
 
 Phase 0 adds no sheets. It is still the right first move: the path index alone
 adds three columns to twenty sheets, and doing it after the sheets exist means
@@ -165,6 +165,26 @@ seen were such VMs, never a value difference on a VM present in both runs.
 
 Still unverified: the GUI itself has not been run on Windows — the fetch and
 export paths were driven through the library API, not the Tauri window.
+
+### Captured fixtures, 2026-09-03
+
+`src-tauri/src/data/fixtures/` holds five real `RetrievePropertiesEx`
+`<objects>` elements — four VMs and one host — sanitised so the public repo
+carries no lab identifiers while element names, `xsi:type`, nesting and ordering
+stay byte-identical to what vCenter sent. `snapshot::test_support::captured_snapshot`
+assembles them into a snapshot, and every sheet now has tests that run over real
+responses. Test count went from 23 to 46.
+
+The payoff was immediate: an assertion written from imagination said a
+snapshot's `state` matches the VM's current power state. The capture disagreed —
+`state` records the VM's state when the snapshot was taken, so a running VM
+carries a `poweredOff` snapshot. A hand-written fixture would have encoded the
+wrong meaning and passed.
+
+Five paths stay synthetic because the lab cannot produce them: a host without
+NTP, nested `childSnapshotList` snapshots, `vCLS-` VMs, a VM with no name, and
+RDM-backed disks. `src-tauri/src/data/fixtures/README.md` records that, so a
+green suite is not mistaken for coverage of those cases.
 
 ### Phase 1: the VM-derived sheets
 
