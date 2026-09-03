@@ -1,6 +1,6 @@
 //! Verify the fetchers against a live vCenter.
 //!
-//!   VC_HOST=vcsa91.vcrocs.local VC_USER=... VC_PASS=... cargo run --example verify [sheet]
+//!   VC_HOST=vcf-mgmt-vc91.vcf.soultec.lab VC_USER=... VC_PASS=... cargo run --example verify [sheet]
 //!
 //! Prints row counts and a sample row so results can be compared against what
 //! vCenter itself reports. Never prints credentials.

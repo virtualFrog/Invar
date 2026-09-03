@@ -292,7 +292,7 @@ The second item here is settled and recorded so it stays settled.
    `docs/LAB-ENVIRONMENT.md` is re-documented against it and records the
    connection, how credentials are kept out of this public repo, and which empty
    results are expected there rather than bugs. The previous entry pointed at
-   `vcsa91.vcrocs.local`, the original author's lab, which does not resolve here.
+   the upstream author's lab, which does not resolve here.
 
    Ground rule 1 in `CLAUDE.md` still holds and is now cheap to satisfy: no new
    property path gets written before it has been queried against this vCenter.

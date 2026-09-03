@@ -805,14 +805,18 @@
         <p>That defect is documented. Do not inherit it.</p>
       </div>
       <div class="risk">
-        <span class="eyebrow">Blocked</span>
-        <h3>No vCenter to develop against</h3>
+        <span class="eyebrow">Resolved</span>
+        <h3>A vCenter to develop against</h3>
         <p>
-          The documented lab, <span class="mono">vcsa91.vcrocs.local</span>, belongs to the
-          original author and does not resolve (checked: NXDOMAIN). Every new sheet needs
-          live queries before its property paths can be written.
+          Settled 2026-09-03: <span class="mono">vcf-mgmt-vc91.vcf.soultec.lab</span>, a VCF 9
+          management domain running vSphere Supervisor &mdash; 3 hosts, 161 VMs, vSAN-backed.
+          The upstream author's lab, which this plan used to name, does not resolve from here.
         </p>
-        <p>This blocks Phase 1, and no amount of Rust solves it.</p>
+        <p>
+          Phase 0 is verified against it and the fixture corpus is captured from it, so
+          ground rule 1 &mdash; never write a property path you have not queried live &mdash;
+          is now cheap to satisfy.
+        </p>
       </div>
       <div class="risk">
         <span class="eyebrow">Open question</span>

@@ -31,8 +31,8 @@ which matters more here than in a typical lab.
 | Instance UUID | `574cef01-7f05-4a86-bb1d-88a92804d683` |
 
 This is the **management vCenter of a VCF 9 fleet**, and it manages the
-`vcf-wld01-*` ESXi hosts. It is not the original author's `vcsa91.vcrocs.local`,
-which this file used to describe and which does not resolve from here.
+`vcf-wld01-*` ESXi hosts. It is not the upstream author's lab, which this file
+used to describe and which does not resolve from here.
 
 ### DNS gotcha
 

@@ -139,8 +139,8 @@ the `VI SDK Server` column:
 {
   "connections": [
     {
-      "host": "vcsa91.vcrocs.local",
-      "username": "administrator@vcrocs.local",
+      "host": "vcf-mgmt-vc91.vcf.soultec.lab",
+      "username": "administrator@vsphere.local",
       "password": "<password>",
       "skip_cert_verify": true
     }
@@ -204,11 +204,11 @@ the app or the network.
 PowerShell 7+:
 
 ```powershell
-$cred = Get-Credential -UserName "administrator@vcrocs.local" -Message "vCenter"
+$cred = Get-Credential -UserName "administrator@vsphere.local" -Message "vCenter"
 ```
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri "https://vcsa91.vcrocs.local/rest/com/vmware/cis/session" -Credential $cred -SkipCertificateCheck
+Invoke-RestMethod -Method Post -Uri "https://vcf-mgmt-vc91.vcf.soultec.lab/rest/com/vmware/cis/session" -Credential $cred -SkipCertificateCheck
 ```
 
 A session token comes back as `{"value": "..."}`. Windows PowerShell 5.1 has no
@@ -216,7 +216,7 @@ A session token comes back as `{"value": "..."}`. Windows PowerShell 5.1 has no
 10 1803+ and later):
 
 ```powershell
-curl.exe -sk -X POST -u "administrator@vcrocs.local:PASSWORD" https://vcsa91.vcrocs.local/rest/com/vmware/cis/session
+curl.exe -sk -X POST -u "administrator@vsphere.local:PASSWORD" https://vcf-mgmt-vc91.vcf.soultec.lab/rest/com/vmware/cis/session
 ```
 
 ### Run a sheet without the UI
@@ -229,7 +229,7 @@ cd src-tauri
 ```
 
 ```powershell
-$env:VC_HOST="vcsa91.vcrocs.local"; $env:VC_USER="administrator@vcrocs.local"; $env:VC_PASS="<password>"
+$env:VC_HOST="vcf-mgmt-vc91.vcf.soultec.lab"; $env:VC_USER="administrator@vsphere.local"; $env:VC_PASS="<password>"
 ```
 
 ```powershell
