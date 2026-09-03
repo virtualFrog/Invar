@@ -4101,7 +4101,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "vcenter-inventory"
+name = "sttools"
 version = "0.1.0"
 dependencies = [
  "chrono",

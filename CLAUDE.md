@@ -1,4 +1,4 @@
-# CLAUDE.md — vCenter Inventory Tool
+# CLAUDE.md - STTools
 
 Drop this at the root of the new repo. Claude Code reads it automatically at the
 start of every session, so it front-loads the domain knowledge that would
@@ -6,21 +6,22 @@ otherwise cost debugging cycles to rediscover.
 
 ## Repo layout — read this first
 
-This repo is **VMware-Explore-Hackathon-2026-Live**. All work happens here.
+This repo is **STTools**, a fork of
+`dalehassinger/VMware-Explore-Hackathon-2026-Live`. All work happens here and is
+pushed to `origin` (`virtualFrog/STTools`). The original repo is wired up as
+`upstream` and is read-only for us; pull from it with `git fetch upstream`.
 
-A prior working implementation sits alongside it at
-`../VMware-Explore-Hackathon-2026/Tauri/` (same name, **without** the `-Live`
-suffix). Consult it for vCenter property paths, SOAP request shapes and RVTools
+A prior working implementation exists at `../VMware-Explore-Hackathon-2026/Tauri/`
+in the original author's setup. It is **not checked out in this working copy**, so
+treat any reference to it below as conditional on cloning it yourself. Where it is
+available, consult it for vCenter property paths, SOAP request shapes and RVTools
 column mappings.
 
-- It is **reference only — never modify anything under it.**
+- It is **reference only. Never modify anything under it.**
 - Treat it as a source of understanding, not code to copy. Write fresh
   implementations here.
 - It has known defects; the "Improvements required" list in `docs/BUILD-PLAN.md`
   says what to do differently. Don't reproduce them.
-
-Because the two directory names differ by only one suffix, sanity-check the
-working directory before creating files.
 
 ## Companion references in this repo
 

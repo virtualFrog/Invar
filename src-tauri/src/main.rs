@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    vcenter_inventory_lib::run()
+    sttools_lib::run()
 }

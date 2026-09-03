@@ -1,5 +1,12 @@
 # Hackathon Build Plan — Reference-While-Rewriting
 
+> **Historical document.** This describes how the original hackathon repo was
+> bootstrapped. Every path and repo name below refers to that original layout;
+> this repo is now **STTools** (a fork of
+> `dalehassinger/VMware-Explore-Hackathon-2026-Live`) and the reference repo
+> `VMware-Explore-Hackathon-2026` is not checked out here. The "Improvements
+> required" list further down is still the live guidance.
+
 Build the new app in a fresh repo, with Claude Code reading the existing
 implementation as a reference and writing new code from that understanding.
 

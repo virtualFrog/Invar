@@ -1,9 +1,13 @@
 <div align="center">
 
-# VMware Explore Hackathon 2026 — Live
+# STTools
 
 <p>
   A cross-platform infrastructure-assessment tool, built live at the VMware Explore Hackathon.
+</p>
+
+<p>
+  Fork of <a href="https://github.com/dalehassinger/VMware-Explore-Hackathon-2026-Live">dalehassinger/VMware-Explore-Hackathon-2026-Live</a>.
 </p>
 
 </div>

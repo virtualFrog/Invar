@@ -2,8 +2,8 @@
 //!
 //!   VC_HOST=… VC_USER=… VC_PASS=… cargo run --example insights
 
-use vcenter_inventory_lib::data::insights;
-use vcenter_inventory_lib::vcenter::{SessionCache, VCenterConnection};
+use sttools_lib::data::insights;
+use sttools_lib::vcenter::{SessionCache, VCenterConnection};
 
 #[tokio::main]
 async fn main() -> Result<(), String> {

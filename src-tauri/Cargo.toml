@@ -1,12 +1,12 @@
 [package]
-name = "vcenter-inventory"
+name = "sttools"
 version = "0.1.0"
-description = "Cross-platform vCenter inventory tool"
+description = "STTools - cross-platform vCenter inventory tool"
 edition = "2021"
-default-run = "vcenter-inventory"
+default-run = "sttools"
 
 [lib]
-name = "vcenter_inventory_lib"
+name = "sttools_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -1,4 +1,4 @@
-// vCenter Inventory — frontend.
+// STTools frontend.
 //
 // Every value rendered here comes from vCenter and is free text (VM names,
 // annotations). Nothing is ever written with innerHTML: with withGlobalTauri

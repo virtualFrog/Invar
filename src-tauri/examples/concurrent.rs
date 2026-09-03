@@ -6,8 +6,8 @@
 //! single session, not one per sheet.
 
 use std::sync::Arc;
-use vcenter_inventory_lib::data::{vdisk, vhost, vinfo, vsnapshot};
-use vcenter_inventory_lib::vcenter::{SessionCache, VCenterConnection};
+use sttools_lib::data::{vdisk, vhost, vinfo, vsnapshot};
+use sttools_lib::vcenter::{SessionCache, VCenterConnection};
 
 #[tokio::main]
 async fn main() -> Result<(), String> {

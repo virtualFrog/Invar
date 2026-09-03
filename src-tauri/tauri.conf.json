@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "vCenter Inventory",
+  "productName": "STTools",
   "version": "0.1.0",
-  "identifier": "com.vcrocs.vcenter-inventory",
+  "identifier": "ch.soultec.sttools",
   "build": {
     "frontendDist": "../src"
   },
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "vCenter Inventory",
+        "title": "STTools",
         "width": 1400,
         "height": 900
       }
