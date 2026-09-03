@@ -399,6 +399,52 @@ vInfo 25 to 89, vHost 49 to 70, vDisk 25 to 40, vSnapshot 13 to 22.
 Size: M, and it parallelises well across people because the sheets do not
 interact.
 
+### Phase 4 landed, 2026-09-03
+
+Column depth on the four sheets that existed before Phase 1, all against
+vCenter 9.1.1:
+
+| Sheet | Columns before | after |
+|---|---:|---:|
+| vInfo | 29 | 53 |
+| vHost | 52 | 63 |
+| vDisk | 29 | 33 |
+| vSnapshot | 17 | 19 |
+
+(Counts include the generic Datacenter / Cluster / Folder / VI SDK Server.)
+
+No path was written from RVTools' column names alone. `probe_candidates`
+bisects a list of candidate paths against a live vCenter, which matters because
+vim25 **faults the entire retrieve** if one path does not exist on the type —
+a single bad guess empties every sheet, not one column. It separated three
+outcomes:
+
+- **Invalid, never to be written:** `summary.guest.guestState`,
+  `config.hardware.numMonitors`, `config.hardware.videoRamSizeInKB`,
+  `guest.ipStack.dnsConfig.hostName`, `guest.ipStack.dnsConfig.domainName`,
+  `config.vmfsDatastore`, `config.sslThumbprint`. All look plausible; none
+  exist.
+- **Valid but populated on nothing here**, so not claimed as columns:
+  `runtime.memoryOverhead` (which confirms dropping vMemory's `Overhead` was
+  right), `config.cpuAffinity.affinitySet`,
+  `config.scheduledHardwareUpgradeInfo.versionKey`, `parentVApp`,
+  `summary.tpmAttestation.status`, `hardware.biosInfo.vendor`,
+  `hardware.biosInfo.firmwareMajorRelease`,
+  `config.consoleReservation.serviceConsoleReserved`.
+- **Valid and populated:** everything now shipped.
+
+`ResourcePool` joined the container walk, so vInfo's `Resource pool` shows a
+name rather than a moref. Walk count is unchanged.
+
+Verified live: every new column carries data, none is empty. The partial ones
+are all explainable — `PowerOn` 98/164 (running VMs only), `DAS protection`
+71/164 (HA-protected VMs), `Resource pool` 156/164 (templates have none).
+
+Still short of RVTools' full 89 on vInfo. What remains is mostly per-NIC
+`Network #1..#8` columns, FT detail this lab does not use, and cluster-rule
+membership, which needs `ClusterComputeResource` rule objects rather than VM
+properties.
+
 ### Phase 5: the two hard blockers
 
 | Item | Needs | Unlocks |

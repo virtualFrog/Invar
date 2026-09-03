@@ -37,6 +37,36 @@ pub const VM_PROPS: &[&str] = &[
     "summary.runtime.maxCpuUsage",
     "summary.quickStats.guestMemoryUsage",
     "summary.config.memorySizeMB",
+    // Phase 4 depth. Every path below was probed across all 164 VMs before it
+    // was written: see `examples/property_audit`. Five plausible-looking paths
+    // were rejected in the process because vim25 has no such property on
+    // VirtualMachine at all -- `summary.guest.guestState`,
+    // `config.hardware.numMonitors`, `config.hardware.videoRamSizeInKB` and the
+    // two `guest.ipStack.dnsConfig.*` -- and any one of them would have faulted
+    // the whole retrieve rather than just emptying a column.
+    "summary.overallStatus",
+    "runtime.connectionState",
+    "guest.guestState",
+    "runtime.consolidationNeeded",
+    "runtime.bootTime",
+    "runtime.faultToleranceState",
+    "runtime.dasVmProtection.dasProtected",
+    "summary.config.numEthernetCards",
+    "summary.config.numVirtualDisks",
+    "summary.storage.unshared",
+    "config.latencySensitivity.level",
+    "config.changeTrackingEnabled",
+    "config.swapPlacement",
+    "config.files.logDirectory",
+    "config.files.snapshotDirectory",
+    "config.files.suspendDirectory",
+    "config.bootOptions.bootDelay",
+    "config.bootOptions.bootRetryEnabled",
+    "config.bootOptions.bootRetryDelay",
+    "config.bootOptions.enterBIOSSetup",
+    "config.scheduledHardwareUpgradeInfo.upgradePolicy",
+    "config.scheduledHardwareUpgradeInfo.scheduledHardwareUpgradeStatus",
+    "resourcePool",
 ];
 
 /// RVTools' labels, except where our unit differs: RVTools reports
@@ -69,6 +99,31 @@ pub fn columns() -> Vec<Column> {
         Column::text("Annotation"),
         Column::text("Change Version"),
         Column::text("VM UUID"),
+        Column::text("VM ID"),
+        // ---- Phase 4 ----
+        Column::text("Config status"),
+        Column::text("Connection state"),
+        Column::text("Guest state"),
+        Column::bool("Consolidation Needed"),
+        Column::text("PowerOn"),
+        Column::text("FT State"),
+        Column::bool("DAS protection"),
+        Column::number("NICs"),
+        Column::number("Disks"),
+        Column::number("Unshared GiB"),
+        Column::text("Latency Sensitivity"),
+        Column::bool("CBT"),
+        Column::text("Swap file placement"),
+        Column::text("Resource pool"),
+        Column::text("Log directory"),
+        Column::text("Snapshot directory"),
+        Column::text("Suspend directory"),
+        Column::number("Boot delay"),
+        Column::bool("Boot retry enabled"),
+        Column::number("Boot retry delay"),
+        Column::bool("Boot BIOS setup"),
+        Column::text("HW upgrade policy"),
+        Column::text("HW upgrade status"),
     ]
 }
 
@@ -132,6 +187,42 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String
             Cell::opt_text(vm.str_prop("config.annotation")),
             Cell::opt_text(vm.str_prop("config.changeVersion")),
             Cell::opt_text(vm.str_prop("config.uuid")),
+            // The managed-object reference, which is what RVTools' VM ID is and
+            // the only identifier guaranteed unique within one vCenter.
+            Cell::Text(vm.moref.clone()),
+            // ---- Phase 4 ----
+            Cell::opt_text(vm.str_prop("summary.overallStatus")),
+            Cell::opt_text(vm.str_prop("runtime.connectionState")),
+            Cell::opt_text(vm.str_prop("guest.guestState")),
+            Cell::opt_bool(vm.bool_prop("runtime.consolidationNeeded")),
+            // Only a running VM has a boot time; a powered-off one reports none.
+            Cell::opt_text(vm.str_prop("runtime.bootTime")),
+            Cell::opt_text(vm.str_prop("runtime.faultToleranceState")),
+            Cell::opt_bool(vm.bool_prop("runtime.dasVmProtection.dasProtected")),
+            Cell::opt_num(vm.i64_prop("summary.config.numEthernetCards").map(|v| v as f64)),
+            Cell::opt_num(vm.i64_prop("summary.config.numVirtualDisks").map(|v| v as f64)),
+            // Bytes on the wire. RVTools' column is MiB; this is GiB and says so,
+            // to stay consistent with Provisioned/In Use on this sheet.
+            Cell::opt_num(vm.i64_prop("summary.storage.unshared").map(bytes_to_gib)),
+            Cell::opt_text(vm.str_prop("config.latencySensitivity.level")),
+            Cell::opt_bool(vm.bool_prop("config.changeTrackingEnabled")),
+            Cell::opt_text(vm.str_prop("config.swapPlacement")),
+            // A moref; the inventory index turns it into the pool's name.
+            Cell::opt_text(
+                vm.str_prop("resourcePool").map(|m| snap.paths.name_of(&m).unwrap_or(m)),
+            ),
+            Cell::opt_text(vm.str_prop("config.files.logDirectory")),
+            Cell::opt_text(vm.str_prop("config.files.snapshotDirectory")),
+            Cell::opt_text(vm.str_prop("config.files.suspendDirectory")),
+            // Milliseconds, as vCenter reports them.
+            Cell::opt_num(vm.i64_prop("config.bootOptions.bootDelay").map(|v| v as f64)),
+            Cell::opt_bool(vm.bool_prop("config.bootOptions.bootRetryEnabled")),
+            Cell::opt_num(vm.i64_prop("config.bootOptions.bootRetryDelay").map(|v| v as f64)),
+            Cell::opt_bool(vm.bool_prop("config.bootOptions.enterBIOSSetup")),
+            Cell::opt_text(vm.str_prop("config.scheduledHardwareUpgradeInfo.upgradePolicy")),
+            Cell::opt_text(
+                vm.str_prop("config.scheduledHardwareUpgradeInfo.scheduledHardwareUpgradeStatus"),
+            ),
         ]));
     }
 

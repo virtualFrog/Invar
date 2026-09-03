@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 /// What this sheet reads beyond `common::VM_CONTEXT_PROPS`: the device array
 /// the disks come out of.
-pub const VM_PROPS: &[&str] = &["config.hardware.device"];
+pub const VM_PROPS: &[&str] = &["config.hardware.device", "config.uuid", "config.files.vmPathName"];
 
 pub fn columns() -> Vec<Column> {
     vec![
@@ -43,6 +43,11 @@ pub fn columns() -> Vec<Column> {
         Column::text("Raw Comp. Mode"),
         Column::text("Host"),
         Column::text("Annotation"),
+        // ---- Phase 4 ----
+        Column::text("Shared Bus"),
+        Column::text("Path"),
+        Column::text("VM ID"),
+        Column::text("VM UUID"),
     ]
 }
 
@@ -71,6 +76,15 @@ fn controller_labels(devices: &[&Element]) -> HashMap<String, String> {
         .collect()
 }
 
+/// Device key -> the controller's `sharedBus` setting, for the disks on it.
+fn controller_shared_bus(devices: &[&Element]) -> HashMap<String, String> {
+    devices
+        .iter()
+        .filter_map(|d| Some((d.text_at("key")?, d.text_at("sharedBus")?)))
+        .filter(|(_, v)| !v.is_empty())
+        .collect()
+}
+
 pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String> {
     let hosts = &snap.host_names;
 
@@ -81,6 +95,7 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String
         };
         let devices = vm.array_prop("config.hardware.device");
         let controllers = controller_labels(&devices);
+        let shared_bus = controller_shared_bus(&devices);
 
         for disk in devices
             .iter()
@@ -125,6 +140,16 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String
                 Cell::opt_text(backing.and_then(|b| text(b, "compatibilityMode"))),
                 Cell::opt_text(ctx.host.clone()),
                 Cell::opt_text(ctx.annotation.clone()),
+                // ---- Phase 4 ----
+                // Bus sharing is a property of the controller the disk hangs
+                // off, not of the disk, so it is resolved the same way the
+                // controller label is.
+                Cell::opt_text(
+                    text(disk, "controllerKey").and_then(|k| shared_bus.get(&k).cloned()),
+                ),
+                Cell::opt_text(vm.str_prop("config.files.vmPathName")),
+                Cell::Text(vm.moref.clone()),
+                Cell::opt_text(vm.str_prop("config.uuid")),
             ]));
         }
     }

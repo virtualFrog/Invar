@@ -19,6 +19,7 @@ pub const VM_PROPS: &[&str] = &[
     "snapshot.currentSnapshot",
     "layoutEx.file",
     "layoutEx.snapshot",
+    "config.uuid",
 ];
 
 pub fn columns() -> Vec<Column> {
@@ -36,6 +37,9 @@ pub fn columns() -> Vec<Column> {
         Column::bool("Is current"),
         Column::text("Host"),
         Column::text("Annotation"),
+        // ---- Phase 4 ----
+        Column::text("VM ID"),
+        Column::text("VM UUID"),
     ]
 }
 
@@ -153,6 +157,9 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String
                 Cell::Bool(current.as_deref() == Some(snap.moref.as_str())),
                 Cell::opt_text(ctx.host.clone()),
                 Cell::opt_text(ctx.annotation.clone()),
+                // ---- Phase 4 ----
+                Cell::Text(vm.moref.clone()),
+                Cell::opt_text(vm.str_prop("config.uuid")),
             ]));
         }
     }

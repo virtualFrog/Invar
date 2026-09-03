@@ -196,6 +196,8 @@ impl InventorySnapshot {
                     "ComputeResource",
                     "Network",
                     "DistributedVirtualSwitch",
+                    // vInfo names a VM's resource pool, which arrives as a moref.
+                    "ResourcePool",
                 ],
                 &["name", "parent"],
             )

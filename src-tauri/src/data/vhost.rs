@@ -55,6 +55,24 @@ pub const HOST_PROPS: &[&str] = &[
     "hardware.cpuPowerManagementInfo.currentPolicy",
     "hardware.systemInfo.serialNumber",
     "hardware.systemInfo.otherIdentifyingInfo",
+    // Phase 4 depth, each probed across all hosts first. Two candidates were
+    // rejected as not being properties of HostSystem at all
+    // (`config.vmfsDatastore`, `config.sslThumbprint`), and four more are valid
+    // but populated on no host here, so they are not claimed as columns:
+    // `summary.tpmAttestation.status`, `hardware.biosInfo.vendor`,
+    // `hardware.biosInfo.firmwareMajorRelease` and
+    // `config.consoleReservation.serviceConsoleReserved`.
+    "runtime.inQuarantineMode",
+    "runtime.standbyMode",
+    "summary.rebootRequired",
+    "summary.config.vmotionEnabled",
+    "summary.config.product.build",
+    "summary.managementServerIp",
+    "summary.quickStats.uptime",
+    "hardware.numaInfo.numNodes",
+    "config.lockdownMode",
+    "config.adminDisabled",
+    "config.vsanHostConfig.enabled",
 ];
 
 /// RVTools' labels, except where our unit differs: RVTools reports `# Memory`
@@ -111,6 +129,18 @@ pub fn columns() -> Vec<Column> {
         Column::text("BIOS Version"),
         Column::text("BIOS Date"),
         Column::text("UUID"),
+        // ---- Phase 4 ----
+        Column::bool("in Quarantine Mode"),
+        Column::text("Standby mode"),
+        Column::bool("Reboot required"),
+        Column::bool("VMotion enabled"),
+        Column::text("ESX Build"),
+        Column::text("Management server"),
+        Column::number("Uptime days"),
+        Column::number("NUMA nodes"),
+        Column::text("Lockdown mode"),
+        Column::bool("Admin disabled"),
+        Column::bool("vSAN enabled"),
     ]
 }
 
@@ -283,6 +313,24 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String
             Cell::opt_text(host.str_prop("hardware.biosInfo.biosVersion")),
             Cell::opt_text(host.str_prop("hardware.biosInfo.releaseDate")),
             Cell::opt_text(host.str_prop("summary.hardware.uuid")),
+            // ---- Phase 4 ----
+            Cell::opt_bool(host.bool_prop("runtime.inQuarantineMode")),
+            Cell::opt_text(host.str_prop("runtime.standbyMode")),
+            Cell::opt_bool(host.bool_prop("summary.rebootRequired")),
+            Cell::opt_bool(host.bool_prop("summary.config.vmotionEnabled")),
+            Cell::opt_text(host.str_prop("summary.config.product.build")),
+            // Which vCenter the host believes it is managed by. Worth having
+            // beside VI SDK Server: they disagree when a host was moved.
+            Cell::opt_text(host.str_prop("summary.managementServerIp")),
+            // vCenter reports seconds; days is what anyone actually reads.
+            Cell::opt_num(
+                host.i64_prop("summary.quickStats.uptime")
+                    .map(|s| (s as f64 / 86400.0 * 100.0).round() / 100.0),
+            ),
+            Cell::opt_num(host.i64_prop("hardware.numaInfo.numNodes").map(|v| v as f64)),
+            Cell::opt_text(host.str_prop("config.lockdownMode")),
+            Cell::opt_bool(host.bool_prop("config.adminDisabled")),
+            Cell::opt_bool(host.bool_prop("config.vsanHostConfig.enabled")),
         ]));
     }
 
