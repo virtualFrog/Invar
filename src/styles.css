@@ -100,24 +100,13 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
-/* Four cells with one filled: the app reduced to its subject, an inventory
- * grid with something in it worth finding. */
+/* The mark is an inline SVG in index.html; it only needs placing here.
+ * `color` sets the three quiet cells, the accent cell is set in the markup. */
 .brand-mark {
-  width: 18px;
-  height: 18px;
   flex: none;
-  display: grid;
-  grid-template: repeat(2, 1fr) / repeat(2, 1fr);
-  gap: 2px;
+  display: block;
+  color: var(--border-strong);
 }
-.brand-mark::before,
-.brand-mark::after {
-  content: "";
-  background: var(--border-strong);
-  border-radius: 1px;
-}
-.brand-mark::before { box-shadow: 20px 0 0 var(--accent); }
-.brand-mark::after { grid-column: 1; box-shadow: 20px 0 0 var(--border-strong); }
 
 .brand-text { display: flex; flex-direction: column; line-height: 1.25; }
 .brand-text strong { font-size: 13px; font-weight: 600; letter-spacing: 0.01em; }
