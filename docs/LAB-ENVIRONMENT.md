@@ -172,6 +172,23 @@ list before "fixing" an empty column.**
 | vMemory | `Overhead` | column absent | `runtime.memoryOverhead` was returned for **no** VM, so the column is not implemented rather than shipped always-empty. |
 | vUSB | all | 1 row | Only `sttools-fixture-01` has a `VirtualUSB` device; the lab's other USB entries are *controllers*, which are not devices and are deliberately not rows. |
 
+### Host networking is entirely distributed
+
+There is **no standard vSwitch and no standard port group** anywhere in this
+lab: `config.network.vswitch` and `config.network.portgroup` return empty arrays
+on all three hosts. RVTools' `vSwitch` and `vPort` sheets are therefore always
+empty here, and their parsing is exercised only by explicitly-marked synthetic
+tests. Everything runs on one distributed switch, `vcf-mgmt-cl01-vds01`
+(`dvs-20`), with 60 port groups.
+
+Two more partial columns worth knowing before they look like defects:
+
+| Sheet | Column(s) | Rows filled | Why |
+|---|---|---|---|
+| vNIC | `Speed`, `Duplex`, `Switch`, `Uplink port` | 6/18 | Only two of each host's six NICs are cabled. `linkSpeed` is sent only for a link that is up, and an unattached NIC backs no uplink. |
+| vSC_VMK | `Port Group` | 9/18 | The NSX `vxlan` and `hyperbus` VMkernel ports sit on no port group at all. |
+| dvPort | `Active Uplink` | 9/60 | Most port groups inherit teaming from the switch and vCenter does not materialise `uplinkPortOrder` for them. |
+
 ### The one that looks alarming and is not
 
 **vHealth reports `Inconsistent Foldername!` for all 161 VMs.**

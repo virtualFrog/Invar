@@ -6,19 +6,27 @@
 //! into ~24 per-table definitions.
 
 pub mod common;
+pub mod dvport;
+pub mod dvswitch;
+pub mod hostnet;
 pub mod insights;
 pub mod snapshot;
 pub mod topology;
 pub mod vcd;
 pub mod vcpu;
 pub mod vdisk;
+pub mod vhba;
 pub mod vhealth;
 pub mod vhost;
 pub mod vinfo;
 pub mod vmemory;
 pub mod vnetwork;
+pub mod vnic;
 pub mod vpartition;
+pub mod vport;
+pub mod vsc_vmk;
 pub mod vsnapshot;
+pub mod vswitch;
 pub mod vtools;
 pub mod vusb;
 
@@ -44,6 +52,13 @@ pub const SHEETS: &[&SheetSpec] = &[
     &vsnapshot::SPEC,
     &vtools::SPEC,
     &vhost::SPEC,
+    &vhba::SPEC,
+    &vnic::SPEC,
+    &vswitch::SPEC,
+    &vport::SPEC,
+    &dvswitch::SPEC,
+    &dvport::SPEC,
+    &vsc_vmk::SPEC,
     &vhealth::SPEC,
 ];
 

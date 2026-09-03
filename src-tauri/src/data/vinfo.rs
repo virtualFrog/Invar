@@ -143,6 +143,8 @@ pub const SPEC: SheetSpec = SheetSpec {
     columns,
     vm_props: &[VM_PROPS],
     host_props: &[],
+    dvs_props: &[],
+    dvpg_props: &[],
     source: RowSource::Vm,
     rows,
 };

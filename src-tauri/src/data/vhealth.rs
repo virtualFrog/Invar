@@ -196,6 +196,8 @@ pub const SPEC: SheetSpec = SheetSpec {
     columns,
     vm_props: &[VM_PROPS],
     host_props: &[HOST_PROPS],
+    dvs_props: &[],
+    dvpg_props: &[],
     // RVTools' vHealth is three columns wide: Name, Message, Message type.
     // It gets no location columns.
     source: RowSource::None,

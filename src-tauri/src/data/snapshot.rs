@@ -118,6 +118,10 @@ pub struct InventorySnapshot {
     /// `HostSystem` moref → host name, for resolving `runtime.host`. Derived
     /// from `hosts`, so it costs no extra round trip.
     pub host_names: HashMap<String, String>,
+    /// `DistributedVirtualSwitch` objects, for dvSwitch.
+    pub dvswitches: Vec<ManagedObject>,
+    /// `DistributedVirtualPortgroup` objects, for dvPort.
+    pub dvportgroups: Vec<ManagedObject>,
     /// Datacenter / Cluster / Folder lookups.
     pub paths: PathIndex,
 }
@@ -130,6 +134,8 @@ impl InventorySnapshot {
         server: &str,
         vm_props: &[&'static str],
         host_props: &[&'static str],
+        dvs_props: &[&'static str],
+        dvpg_props: &[&'static str],
     ) -> Result<Self, String> {
         // Every VM-derived sheet resolves `runtime.host` to a host name, so a
         // VM fetch always implies at least the hosts' names. This is the walk
@@ -168,10 +174,31 @@ impl InventorySnapshot {
         let containers = session
             .soap
             .retrieve_types(
-                &["Folder", "Datacenter", "ComputeResource", "Network"],
+                &[
+                    "Folder",
+                    "Datacenter",
+                    "ComputeResource",
+                    "Network",
+                    "DistributedVirtualSwitch",
+                ],
                 &["name", "parent"],
             )
             .await?;
+
+        // Distributed switching needs its own object types. A DVS and a
+        // portgroup carry different properties, so unlike the container walk
+        // these cannot share one propSet and are fetched separately -- and only
+        // when a sheet actually asks for them.
+        let dvswitches = if dvs_props.is_empty() {
+            Vec::new()
+        } else {
+            session.soap.retrieve("DistributedVirtualSwitch", dvs_props).await?
+        };
+        let dvportgroups = if dvpg_props.is_empty() {
+            Vec::new()
+        } else {
+            session.soap.retrieve("DistributedVirtualPortgroup", dvpg_props).await?
+        };
 
         let host_names = hosts
             .iter()
@@ -179,7 +206,15 @@ impl InventorySnapshot {
             .collect();
         let paths = PathIndex::build(&containers, &vms, &hosts);
 
-        Ok(Self { server: server.to_string(), vms, hosts, host_names, paths })
+        Ok(Self {
+            server: server.to_string(),
+            vms,
+            hosts,
+            host_names,
+            dvswitches,
+            dvportgroups,
+            paths,
+        })
     }
 
     /// A snapshot assembled by hand, for tests that have captured XML but no
@@ -200,7 +235,26 @@ impl InventorySnapshot {
             .filter_map(|h| h.str_prop("name").map(|n| (h.moref.clone(), n)))
             .collect();
         let paths = PathIndex::build(&containers, &vms, &hosts);
-        Self { server: "test".into(), vms, hosts, host_names, paths }
+        Self {
+            server: "test".into(),
+            vms,
+            hosts,
+            host_names,
+            dvswitches: Vec::new(),
+            dvportgroups: Vec::new(),
+            paths,
+        }
+    }
+
+    /// As `from_parts_with_containers`, plus distributed-switching objects.
+    pub fn with_distributed(
+        mut self,
+        dvswitches: Vec<ManagedObject>,
+        dvportgroups: Vec<ManagedObject>,
+    ) -> Self {
+        self.dvswitches = dvswitches;
+        self.dvportgroups = dvportgroups;
+        self
     }
 }
 
@@ -277,6 +331,10 @@ pub struct SheetSpec {
     pub vm_props: &'static [&'static [&'static str]],
     /// `HostSystem` property sets this sheet reads. Empty reads nothing.
     pub host_props: &'static [&'static [&'static str]],
+    /// `DistributedVirtualSwitch` property sets. Empty reads nothing.
+    pub dvs_props: &'static [&'static [&'static str]],
+    /// `DistributedVirtualPortgroup` property sets. Empty reads nothing.
+    pub dvpg_props: &'static [&'static [&'static str]],
     /// What each row describes, which decides its location columns.
     pub source: RowSource,
     /// Pure by design: all I/O happened when the snapshot was built.
@@ -302,8 +360,14 @@ pub async fn fetch_tables(
         specs.iter().flat_map(|s| s.vm_props.iter().copied()).collect();
     let host_sets: Vec<&[&'static str]> =
         specs.iter().flat_map(|s| s.host_props.iter().copied()).collect();
+    let dvs_sets: Vec<&[&'static str]> =
+        specs.iter().flat_map(|s| s.dvs_props.iter().copied()).collect();
+    let dvpg_sets: Vec<&[&'static str]> =
+        specs.iter().flat_map(|s| s.dvpg_props.iter().copied()).collect();
     let vm_props = union(&vm_sets);
     let host_props = union(&host_sets);
+    let dvs_props = union(&dvs_sets);
+    let dvpg_props = union(&dvpg_sets);
 
     let mut tables: Vec<Table> = specs
         .iter()
@@ -319,7 +383,15 @@ pub async fn fetch_tables(
 
         let snapshot = match cache.get(conn).await {
             Ok(session) => {
-                InventorySnapshot::fetch(&session, &label, &vm_props, &host_props).await
+                InventorySnapshot::fetch(
+                    &session,
+                    &label,
+                    &vm_props,
+                    &host_props,
+                    &dvs_props,
+                    &dvpg_props,
+                )
+                .await
             }
             Err(e) => Err(e),
         };
@@ -428,6 +500,20 @@ pub mod test_support {
     /// Parse one captured `<objects>` element.
     pub fn captured(xml: &str) -> ManagedObject {
         ManagedObject::from_element(&xml::parse(xml).expect("captured fixture parses"))
+    }
+
+    /// The lab's one distributed switch, with its full `config` and `summary`.
+    pub const DVSWITCHES: &str = include_str!("fixtures/dvswitches.xml");
+    /// Three representative distributed port groups. Three rather than all 60:
+    /// the config of one is ~5 KB, and three cover the shapes that differ.
+    pub const DVPORTGROUPS: &str = include_str!("fixtures/dvportgroups.xml");
+
+    pub fn captured_dvswitches() -> Vec<ManagedObject> {
+        captured_many(DVSWITCHES)
+    }
+
+    pub fn captured_dvportgroups() -> Vec<ManagedObject> {
+        captured_many(DVPORTGROUPS)
     }
 
     /// Parse a capture holding several `<objects>` elements under one root.

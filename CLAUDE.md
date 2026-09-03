@@ -110,6 +110,26 @@ snapshot.rootSnapshotList   → <VirtualMachineSnapshotTree>             (type n
   …its children             → <childSnapshotList>                      (field name)
 ```
 
+### Distributed-switch settings are wrapped, standard-switch ones are not
+
+Every policy on a distributed port group is an object carrying `inherited` plus
+the effective `value`:
+
+```
+securityPolicy/allowPromiscuous/value   <- the answer
+securityPolicy/allowPromiscuous         <- an envelope, no text of its own
+```
+
+Reading the field instead of its `value` child yields an empty cell and no
+error. A **standard** switch or port group states the same settings directly,
+with no envelope, so the two cannot share a reader. `vlan` is the exception on
+the distributed side: it carries `vlanId` directly, because the field is
+polymorphic and a trunk group holds ranges under a different type instead.
+
+Also: a `Network` container view returns `DistributedVirtualPortgroup` (a
+subclass) but **not** `DistributedVirtualSwitch`. If you need switch names, ask
+for that type explicitly.
+
 ### Devices do not all report connection the same way
 
 `VirtualCdrom`, `VirtualFloppy` and the ethernet cards carry a `connectable`

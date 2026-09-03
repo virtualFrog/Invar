@@ -278,6 +278,8 @@ pub const SPEC: SheetSpec = SheetSpec {
     // rollup over VMs, so it declares both sets.
     vm_props: &[VM_TOTALS_PROPS],
     host_props: &[HOST_PROPS],
+    dvs_props: &[],
+    dvpg_props: &[],
     source: RowSource::Host,
     rows,
 };
