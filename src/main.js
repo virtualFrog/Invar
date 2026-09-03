@@ -13,7 +13,7 @@ const el = (id) => document.getElementById(id);
 let table = null;
 let sort = { index: null, ascending: true };
 /** The dashboard view. Not a sheet — it has no table and is not exported. */
-const INSIGHTS = "Dale Insights";
+const INSIGHTS = "Environment Overview";
 
 /** Sheet currently selected in the sidebar. */
 let currentSheet = INSIGHTS;

@@ -1,4 +1,4 @@
-//! Dale Insights — the environment rolled up into headline numbers.
+//! Environment Overview — the whole estate rolled up into headline numbers.
 //!
 //! Built on the same verified fetches the sheets use: topology supplies hosts,
 //! clusters and datastores; `vm_totals_by_host` supplies VM, vCPU and vRAM

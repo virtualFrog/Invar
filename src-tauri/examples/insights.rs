@@ -1,4 +1,4 @@
-//! Print the Dale Insights rollup from a live vCenter.
+//! Print the Environment Overview rollup from a live vCenter.
 //!
 //!   VC_HOST=… VC_USER=… VC_PASS=… cargo run --example insights
 

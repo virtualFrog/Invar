@@ -271,7 +271,7 @@ dialog h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; border: 2px solid var(--app-bg); }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
 
-/* ---- Dale Insights dashboard ---- */
+/* ---- Environment Overview dashboard ---- */
 
 .dashboard {
   flex: 1;

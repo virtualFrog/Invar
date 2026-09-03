@@ -91,8 +91,8 @@ Two consequences beyond speed:
 |---|---|---|---|
 | `InventorySnapshot` and sheets as pure functions over it | Sets the marginal cost of the remaining 21 sheets | L | **Done** |
 | Test harness for sheets without a vCenter | Every later sheet ships with a parse test instead of a live-only check | M | **Done** |
-| Inventory path index: Datacenter, Cluster, Folder | Cross-cutting columns on ~20 sheets, appended generically the way `VI SDK Server` already is (`data/mod.rs`). Needs `parent` walks over `Folder`, `Datacenter`, `ComputeResource`, `ClusterComputeResource`, which is a different query shape than the flat reads used so far | M | Blocked on a live vCenter |
-| Real captured XML fixtures per object type | Replaces the hand-written fragments the tests use today with real responses | M | Blocked on a live vCenter |
+| Inventory path index: Datacenter, Cluster, Folder | Cross-cutting columns on ~20 sheets, appended generically the way `VI SDK Server` already is (`data/mod.rs`). Needs `parent` walks over `Folder`, `Datacenter`, `ComputeResource`, `ClusterComputeResource`, which is a different query shape than the flat reads used so far | M | Not started (lab now available) |
+| Real captured XML fixtures per object type | Replaces the hand-written fragments the tests use today with real responses | M | Not started (lab now available; raw responses captured) |
 
 Phase 0 adds no sheets. It is still the right first move: the path index alone
 adds three columns to twenty sheets, and doing it after the sheets exist means
@@ -266,17 +266,16 @@ land with the phases, not after.
 One blocker stands in front of Phase 1, and it is not solved by writing Rust.
 The second item here is settled and recorded so it stays settled.
 
-1. **A vCenter to develop against. Owner: Dario, pending.**
-   `docs/LAB-ENVIRONMENT.md` documents `vcsa91.vcrocs.local`, which is the original
-   author's lab and does not resolve from here (verified: NXDOMAIN). The connection
-   details get updated when the repo is cloned inside the lab, and
-   `LAB-ENVIRONMENT.md` is re-documented then.
+1. **A vCenter to develop against: settled as of 2026-09-03.**
+   `vcf-mgmt-vc91.vcf.soultec.lab`, a VCF 9 management domain running vSphere
+   Supervisor — 3 HPE DL380 Gen10 hosts, 161 VMs, vSAN-backed.
+   `docs/LAB-ENVIRONMENT.md` is re-documented against it and records the
+   connection, how credentials are kept out of this public repo, and which empty
+   results are expected there rather than bugs. The previous entry pointed at
+   `vcsa91.vcrocs.local`, the original author's lab, which does not resolve here.
 
-   Until that lands, work is limited to what needs no live queries: refactors over
-   property paths already verified in the code, and unit tests against synthetic
-   XML. Ground rule 1 in `CLAUDE.md` still holds, so no *new* property path gets
-   written before it has been queried against a live system. Anything shipped in
-   the meantime that assumes a path says so explicitly.
+   Ground rule 1 in `CLAUDE.md` still holds and is now cheap to satisfy: no new
+   property path gets written before it has been queried against this vCenter.
 2. **Which RVTools version is the parity target: settled, it is 4.6.** The column
    spec in `docs/RVTOOLS-SHEETS-AND-COLUMNS.md` is derived from
    `reference/RVTools_export_all_2024-08-18_15.54.15.xlsx`, and that export stays

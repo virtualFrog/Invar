@@ -1,13 +1,18 @@
 # Lab Environment
 
-The vCenter used to develop and verify the reference implementation. Point the
-new app here for development.
+The vCenter STTools is developed and verified against. Point the app here.
+
+Documented 2026-09-03, from live queries against the environment itself. Counts
+drift as the lab changes — see [Inventory volatility](#inventory-volatility),
+which matters more here than in a typical lab.
 
 > **This repo is public.** The vCenter password is deliberately kept out of git.
-> It lives in `LAB-CREDENTIALS.local.md` at the repo root, which is gitignored.
-> Shell snippets below expect `$VC_PASS` to be set:
+> It lives in `LAB-CREDENTIALS.local.md` at the repo root, which is gitignored
+> (as is `*.local.md`). Shell snippets below expect `$VC_PASS` to be set:
 >
 > ```bash
+> export VC_HOST='vcf-mgmt-vc91.vcf.soultec.lab'
+> export VC_USER='administrator@vsphere.local'
 > export VC_PASS='<password from LAB-CREDENTIALS.local.md>'
 > ```
 
@@ -17,160 +22,223 @@ new app here for development.
 
 | | |
 |---|---|
-| Host | `https://vcsa91.vcrocs.local` |
-| IP | `192.168.101.10` |
-| Username | `administrator@vcrocs.local` |
+| Host | `vcf-mgmt-vc91.vcf.soultec.lab` |
+| IP | `10.24.60.30` |
+| Username | `administrator@vsphere.local` |
 | Password | see `LAB-CREDENTIALS.local.md` (untracked) |
-| Certificate | Self-signed — the HTTP client must skip verification |
+| Certificate | Self-signed, issued by `CN=CA, DC=vsphere, DC=local` — the HTTP client must skip verification (`skip_cert_verify: true`) |
+| Product | VMware vCenter Server 9.1.0.0300, build 25629530 (`apiVersion` 9.1.0.0) |
+| Instance UUID | `574cef01-7f05-4a86-bb1d-88a92804d683` |
 
-**Prior/alternate lab** seen in older code, likely retired: `192.168.6.195`,
-user `administrator@vcrocs.local`, password held locally (note: it is shorter than the current one —
-if you hit an old config, that's why).
+This is the **management vCenter of a VCF 9 fleet**, and it manages the
+`vcf-wld01-*` ESXi hosts. It is not the original author's `vcsa91.vcrocs.local`,
+which this file used to describe and which does not resolve from here.
+
+### DNS gotcha
+
+`nslookup vcf-mgmt-vc91.vcf.soultec.lab` returns **NXDOMAIN** against the
+corporate AD DNS server (`stsrvad001.soultec.local`, 10.23.46.100), yet the name
+resolves fine for `curl` and the app. The `vcf.soultec.lab` zone is served by a
+different resolver reachable over the lab network path. **A failed `nslookup` is
+not evidence the app cannot reach vCenter** — test with `curl` instead:
+
+```bash
+curl -sk -o /dev/null -w '%{remote_ip} %{http_code}\n' "https://$VC_HOST/"
+# expect: 10.24.60.30 200
+```
+
+### Credential handling
+
+Nothing here requires writing the password to disk. The repo's Cargo examples
+take it from the environment:
+
+```bash
+cargo run --example verify -- vInfo      # env-var driven, nothing persisted
+```
+
+The **app** is a different story. It reads `config.json`, and on Windows that
+file is written with default ACLs — see
+[Security](#security-storing-the-password) below before you use the GUI.
 
 ### Smoke test
 
 ```bash
 # REST login — should return {"value":"<token>"}
-curl -sk -X POST -u "administrator@vcrocs.local:$VC_PASS" \
-  https://vcsa91.vcrocs.local/rest/com/vmware/cis/session
+curl -sk -X POST -u "$VC_USER:$VC_PASS" \
+  "https://$VC_HOST/rest/com/vmware/cis/session"
 
-# Then list hosts
-TOKEN=<token>
-curl -sk -H "vmware-api-session-id: $TOKEN" \
-  https://vcsa91.vcrocs.local/rest/vcenter/host | python3 -m json.tool
+# SOAP: version info, needs no authentication at all
+curl -sk -X POST "https://$VC_HOST/sdk" \
+  -H 'Content-Type: text/xml; charset=utf-8' -H 'SOAPAction: urn:vim25/8.0' \
+  --data-binary '<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vim25="urn:vim25"><soapenv:Body><vim25:RetrieveServiceContent><vim25:_this type="ServiceInstance">ServiceInstance</vim25:_this></vim25:RetrieveServiceContent></soapenv:Body></soapenv:Envelope>' \
+  | grep -o '<fullName>[^<]*</fullName>'
 ```
-
-If this fails from the venue, the app can't work either — have offline
-screenshots ready.
 
 ---
 
 ## What's in the environment
 
-Snapshot taken while writing this; counts drift as the lab changes.
-
 | | |
 |---|---|
-| vCenter version | 9.1.0.0, build 25370922 |
-| Type | vCenter Server with embedded PSC |
+| Datacenter | `vcf-mgmt-dc01` |
+| Cluster | `vcf-mgmt-cl01` (1), DRS and HA both enabled |
 | ESXi hosts | 3 |
-| VMs | 23 |
-| Clusters | 2 |
-| Datastores | 7 |
-| Licensing | Evaluation |
+| VMs | 161 via SOAP, of which 7 are templates |
+| Datastores | 4 |
+| Networks | 60 (59 distributed portgroups, 1 standard) |
+| Resource pools | 43 |
+| Snapshots | 3 |
+
+**VM count depends on which API you ask.** REST `/rest/vcenter/vm` reports 154;
+the SOAP `ContainerView` the app uses reports **161**. The difference is exactly
+the 7 templates, which REST omits and SOAP includes. RVTools counts templates,
+so 161 is the number vInfo should produce. Do not "fix" a 161 against a REST-derived
+154.
 
 ### Hosts
 
-`esx9-01.vcrocs.local`, `esx9-02.vcrocs.local`, `esx9-03.vcrocs.local`
+`vcf-wld01-esx01`, `vcf-wld01-esx02`, `vcf-wld01-esx03` (all `.vcf.soultec.lab`)
 
-Consumer-grade hardware — vendor reports as "Micro Computer (HK) Tech Limited",
-models "Venus Series" / "MS-A2", Intel Core i9-13900H class CPUs. Storage
-adapters are **local NVMe**, so `vHBA` rows have no WWN (that's correct, not a
-bug). An `esx9-04` existed earlier and was removed.
+Identical physical boxes, and real server hardware rather than nested ESXi:
 
-### Clusters
+| | |
+|---|---|
+| Model | HPE ProLiant DL380 Gen10 |
+| CPU | 2 × Intel Xeon Gold 6252 @ 2.10 GHz — 48 cores, 96 threads, HT active |
+| ESXi | 9.1.0.0200, build 25557999 |
+| NICs / HBAs | 6 / 1 |
+| Memory tiering | DRAM only |
 
-`CL-01`, `CL-02`
+All three have NTP configured (`10.24.0.10`) and `ntpd` running, so they produce
+**no vHealth findings** — see below.
 
 ### Datastores
 
-| Name | Type |
-|---|---|
-| ESX9-01-2TB | VMFS |
-| ESX9-02-4TB | VMFS |
-| ESX9-03-2TB-1 | VMFS |
-| ESX9-03-2TB-2 | VMFS |
-| SYN-HDD | NFS |
-| SYN-SSD-04 | NFS |
-| SYN-SSD-05 | NFS |
+| Name | Type | Capacity |
+|---|---|---|
+| `vcf-mgmt-cl01-ds-vsan01` | vSAN | 36.0 TB |
+| `datastore1` | VMFS | 1.46 TB |
+| `datastore1 (1)` | VMFS | 1.46 TB |
+| `datastore1 (2)` | VMFS | 1.46 TB |
 
-### Networking
+Essentially everything lives on the vSAN datastore. That single fact drives the
+biggest surprise in the vHealth sheet, below.
 
-All networking is on a **distributed switch** — `DSwitch-vCROCS` (`dvs-1025`).
+### Workload character
 
-Portgroups: `Management`, `VL-101` (VLAN 101), `NFS`, `vMotion`, `VM Network`,
-`DSwitch-vCROCS-DVUplinks-1025`.
-
-**There are no standard vSwitches or standard port groups.** `vSwitch` and
-`vPort` correctly return **zero rows** here. Don't chase that as a bug — test
-those two sheets against a different environment if you need to see data.
-
-### VMs
-
-~23, including `OPS91` (VMware Photon OS), `lic91`, `MPB2`, `minion01`. Guest OS
-values come back as enums (`VMWARE_PHOTON_64`) unless you read
-`full_name.default_message`, which gives the friendly string
-("VMware Photon OS (64-bit)").
-
-vCLS VMs (names starting `vCLS-`) are vSphere-managed and filtered out by the
-reference — do the same or your VM counts won't match the vSphere UI.
+This is a **VCF 9 management domain running vSphere Supervisor**, so most VMs are
+Kubernetes-related rather than classic server VMs: `SupervisorControlPlaneVM`,
+`cci-ns-controller-manager-*`, `harbor-*`, `argocd-*`, Avi service engines,
+`vSAN File Service Node (1..3)`. There are also names containing spaces and
+parentheses, which is useful — they exercise quoting and XML escaping that a lab
+of tidy names would not.
 
 ---
 
-## Environment-specific behaviour to expect
+## Expected empty results — not bugs
 
-Things that look like bugs here but aren't:
+Verified 2026-09-03 by inspecting raw `RetrievePropertiesEx` responses. A blank
+column here is a fact about the lab, not a broken property path. **Check this
+list before "fixing" an empty column.**
 
-| Observation | Why |
-|---|---|
-| `vSwitch` / `vPort` empty | No standard switches — all distributed |
-| `vHBA` WWN blank | Local NVMe adapters have no world-wide name |
-| `vSnapshot` often empty | As of 2026-08-31 there are exactly 2: one each on `minion01` and `minion02`, both `.vmsn`-only (memoryKey `-1`, so no `.vmem`). Neither has children, so **nested snapshots are untested here** — create a snapshot of a snapshot if you need to exercise the recursion. |
-| `vDisk` shows no RDMs | All 85 disks are `VirtualDiskFlatVer2BackingInfo`. `Raw`, `Raw LUN ID` and `Raw Comp. Mode` are correctly empty; they need `RawDiskMappingVer1BackingInfo`, which this lab has none of. |
-| `vLicense` shows "Product Evaluation", total 0 | Eval licensing |
-| Host `/hardware` REST endpoints 404 | They genuinely don't exist on this version — that's why SOAP is required |
-| VM counts differ from vSphere UI | vCLS VMs filtered out |
-| SOAP returns one more VM than REST | `/rest/vcenter/vm` omits templates; `VirtualMachine` over SOAP includes them. Verified 2026-08-31: 24 via REST, 25 via SOAP, the extra being `vcf-services-runtime-template-9.1.0.0.25370367`. RVTools' vInfo includes templates with `Template = True`, so the SOAP count is the correct one. |
-| Host memory far larger than the box could hold (478 GiB on a mini PC) | Memory tiering is enabled. `hardware.memorySize` / `summary.hardware.memorySize` report DRAM **plus** the NVMe tier. Verified 2026-08-31: esx9-02/03 are 95.73 GiB DRAM + 382.94 GiB NVMe; esx9-01 is 63.73 + 254.94. Break the tiers out of `hardware.memoryTierInfo` (`<HostMemoryTierInfo>` with `type` of `DRAM` or `NVMe`) rather than presenting the total as physical RAM. Note `summary.hardware.memoryTieringType` does **not** exist — asking for it faults the whole query with HTTP 500. |
-| `summary.currentEVCModeKey` absent on some hosts | Only set for hosts in an EVC-enabled cluster; 1 of 3 here. |
-| ~300 open sessions on the lab vCenter | Mostly lab infrastructure, not your app: vCenter's own `vapi-endpoint` (~168), VCF Operations on `192.168.101.9` (~47), and govmomi checkers on `192.168.101.50`. Filter `sessionList` by your workstation's IP before concluding you are leaking. |
+| Sheet | Column(s) | Rows filled | Why |
+|---|---|---|---|
+| vDisk | `Raw LUN ID`, `Raw Comp. Mode` | 0/345 | No RDMs exist. All 345 disks are `VirtualDiskFlatVer2BackingInfo`; not one is `RawDiskMapping*`, so `Raw` is `False` everywhere and the two RDM-only columns have nothing to report. |
+| vHost | `NVMe Tier GiB` | 0/3 | Memory tiering reports `DRAM` only. No NVMe tier is configured. |
+| vHost | `Current EVC` | 0/3 | EVC is not enabled on the cluster. `Max EVC` *is* populated — that asymmetry is correct. |
+| vHost | `DNS Search Order` | 0/3 | No search domains configured on the hosts. |
+| vInfo | `DNS Name` | 99/161 | Requires VMware Tools to report a hostname. Many Supervisor pod VMs and all powered-off VMs do not. |
+| vInfo | `Primary IP Address` | 97/161 | Same cause as `DNS Name`. |
+| vInfo | `CPU Usage (%)` | 79/161 | Needs `summary.runtime.maxCpuUsage`, which a powered-off VM does not report. The code deliberately leaves this empty rather than writing `0` — 0 % and "not reported" are different facts. |
+| vInfo | `Annotation` | 46/161 | Most VMs simply carry no annotation. |
+| vHealth | NTP / NTPD findings | 0 | All three hosts have NTP servers set and `ntpd` running. A clean result. |
+| all | vCLS exclusion | never fires | **No VM in this lab is named `vCLS-*`.** The `starts_with("vCLS-")` filter in `common.rs` and `vinfo.rs` is inert here, so it is *not* exercised against the live lab — only by unit tests. Do not read a passing lab run as evidence that filter works. |
 
----
+### The one that looks alarming and is not
 
-## Checking for session leaks
+**vHealth reports `Inconsistent Foldername!` for all 161 VMs.**
 
-The single most useful diagnostic while developing. Counts `<UserSession>`
-entries; a healthy app holds a couple, not hundreds.
+The check compares the VM's name against the folder component of
+`config.files.vmPathName`. On this vSAN datastore the folder is an object UUID,
+never the VM name:
 
-```bash
-BODY='<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vim25="urn:vim25">
-  <soapenv:Body><vim25:Login>
-    <vim25:_this type="SessionManager">SessionManager</vim25:_this>
-    <vim25:userName>administrator@vcrocs.local</vim25:userName>
-    <vim25:password>$VC_PASS</vim25:password>
-  </vim25:Login></soapenv:Body>
-</soapenv:Envelope>'
-
-COOKIE=$(curl -sk -i -X POST -H "Content-Type: text/xml; charset=utf-8" \
-  -H "SOAPAction: urn:vim25/8.0" --data "$BODY" https://vcsa91.vcrocs.local/sdk \
-  | grep -i "^set-cookie" | sed -E 's/.*(vmware_soap_session="[^"]*").*/\1/')
-
-QUERY='<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vim25="urn:vim25">
-  <soapenv:Body><vim25:RetrievePropertiesEx>
-    <vim25:_this type="PropertyCollector">propertyCollector</vim25:_this>
-    <vim25:specSet>
-      <vim25:propSet><vim25:type>SessionManager</vim25:type><vim25:pathSet>sessionList</vim25:pathSet></vim25:propSet>
-      <vim25:objectSet><vim25:obj type="SessionManager">SessionManager</vim25:obj></vim25:objectSet>
-    </vim25:specSet><vim25:options/>
-  </vim25:RetrievePropertiesEx></soapenv:Body>
-</soapenv:Envelope>'
-
-curl -sk -X POST -H "Content-Type: text/xml; charset=utf-8" -H "SOAPAction: urn:vim25/8.0" \
-  -H "Cookie: $COOKIE" --data "$QUERY" https://vcsa91.vcrocs.local/sdk \
-  | grep -o "<UserSession" | wc -l
+```
+[vcf-mgmt-cl01-ds-vsan01] c7d5116a-9820-2992-c40e-9440c98fd8cc/vcfsddc91.vmx
+                          ^ folder is a UUID, VM is "vcfsddc91"
 ```
 
+So the check fires for every VM and always will, on any vSAN-backed inventory.
+This is the code faithfully reproducing RVTools' rule, not a defect — real
+RVTools behaves the same way against vSAN. It does mean **vHealth's row count here
+is dominated by one check**: 166 rows = 161 Foldername + 3 Snapshot + 2 CDROM + 0 NTP/NTPD.
+
+The 3 snapshot findings are `eam-snapshot` on the three `vSAN File Service Node`
+VMs, created by ESX Agent Manager rather than by a person.
+
 ---
 
-## RVTools reference export
+## Inventory volatility
 
-`/Users/dalehassinger/Documents/GitHub/PS-TAM-Lab/RVTools/RVTools_export_all_2024-08-18_15.54.15.xlsx`
+**This lab does not hold still.** vSphere Supervisor creates and destroys
+ephemeral pod VMs continuously. During a single verification session a VM named
+`metrics-aggregator-c97c7598f-59qcn` was replaced by
+`metrics-aggregator-5757665c6d-8262q`, changing vInfo by one row, vDisk by three
+and vHealth by one — between two runs minutes apart.
 
-From a **different, larger environment** (`vcsa8x.corp.local`, vCenter 8) — useful
-for column names and formatting, but its data won't match this lab. Copy it into
-the new repo so the team has it without depending on that path.
+Consequences for anyone comparing runs:
 
-Formatting to match: header row is **Verdana 9pt bold, white on black**, freeze
-panes at `B2`, autofilter across the data range.
+- **Bracket your comparisons.** Run A, run B, then run A again. A difference that
+  appears in the A/B pair *and* the A/A pair is lab churn, not code.
+- **Diff on keys, not row counts.** A changed count with a matching
+  appeared/disappeared VM name is drift. A changed count with no such VM is a bug.
+- Expect volatile columns to differ between any two runs regardless:
+  `CPU Usage (%)`, `Memory Usage (%)` (vInfo), `CPU usage %`, `Memory usage %`
+  (vHost), and the vHost VM rollups.
+
+Observed counts sit around 161/3/345/3/166 (vInfo/vHost/vDisk/vSnapshot/vHealth)
+but were seen at 160/3/342/3/165 an hour later. Both are correct.
+
+---
+
+## Verification harness
+
+Two Cargo examples exist specifically for checking the app against this lab:
+
+```bash
+cargo run --example parity_probe -- out.json out.xlsx   # five per-sheet fetchers
+cargo run --example union_probe  -- out.json out.xlsx   # shared-snapshot path
+```
+
+Both read the app's own `config.json`, dump every table as JSON for diffing, and
+write a real xlsx. `parity_probe` uses only function signatures that are
+identical at `cf626b8` and `1ef59b3`, so it compiles and runs at either commit —
+that is how the Phase 0 refactor was verified. See the verification section of
+`docs/PARITY-PLAN.md` for the result.
+
+The repo's older `verify`, `export` and `concurrent` examples take `VC_HOST` /
+`VC_USER` / `VC_PASS` from the environment instead, and persist nothing.
+
+---
+
+## Security: storing the password
+
+`config.json` lives at `%APPDATA%\ch.soultec.sttools\config.json` on Windows and
+`~/Library/Application Support/ch.soultec.sttools/config.json` on macOS. **It
+stores the vCenter password in cleartext.**
+
+`config::restrict_permissions` chmods it to `0600` — but only on Unix. The
+`#[cfg(not(unix))]` arm is an empty function
+(`src-tauri/src/vcenter/config.rs:82`), so on Windows the file keeps default
+ACLs. Confirmed on this machine 2026-09-03:
+
+```
+NT AUTHORITY\SYSTEM        FullControl
+BUILTIN\Administrators     FullControl     <-- any local admin reads the password
+SOULTEC\dario.doerflinger  FullControl
+```
+
+Windows is a first-class target for this app, so treat the GUI config path as
+exposing the password to every local administrator until this is fixed. Tracked
+in `docs/PARITY-PLAN.md` section 4; the fix is the OS credential store (DPAPI on
+Windows, Keychain, libsecret). Prefer the env-var examples for development work
+that does not need the GUI.
