@@ -2,7 +2,8 @@
 //!
 //! Sheets used to walk the inventory themselves: four of them each ran their
 //! own `retrieve("VirtualMachine", ...)`, and `common` added two more walks, so
-//! five sheets cost roughly six full passes. Ten of RVTools' 27 sheets are
+//! five sheets cost ten full passes, measured live rather than estimated. Ten
+//! of RVTools' 27 sheets are
 //! VM-derived, so that shape does not survive the parity work in
 //! `docs/PARITY-PLAN.md`.
 //!

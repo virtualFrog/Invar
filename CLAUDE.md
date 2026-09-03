@@ -173,7 +173,7 @@ property sets; a sheet does no I/O of its own.
 
 - **Never add a `retrieve` call inside a sheet.** Declare the properties in the
   sheet's `SheetSpec` and read them off the snapshot. Sheets used to walk the
-  inventory themselves and five of them cost six full passes; ten of RVTools' 27
+  inventory themselves and five of them cost ten full passes; ten of RVTools' 27
   sheets are VM-derived, so that shape does not scale.
 - A sheet composes shared property groups (`&[VM_CONTEXT_PROPS, VM_PROPS]`)
   rather than restating them, so there is one definition of each group.

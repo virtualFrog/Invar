@@ -53,8 +53,10 @@ the HTML topology report.
 Every sheet today runs its own full inventory walk. `vinfo`, `vdisk`,
 `vsnapshot` and `vhealth` each call `retrieve("VirtualMachine", ...)`
 independently, and `common.rs` adds two more walks for host names and per-host VM
-totals. An export therefore does roughly six full inventory passes for five
-sheets.
+totals. An export therefore does ten full inventory passes for five sheets.
+That number was measured live on 2026-09-03 by instrumenting
+`SoapClient::retrieve`, not estimated: each sheet pays a `HostSystem` name walk
+plus its own `VirtualMachine` walk, and vHost pays two.
 
 Ten of the 27 sheets are derived from `VirtualMachine` properties. Adding them
 the current way means ten more full walks per export, against an API whose
@@ -114,7 +116,7 @@ pub struct SheetSpec {
 
 Consequences:
 
-- **Inventory walks per export dropped from 6 to 2.** One `VirtualMachine`
+- **Inventory walks per export dropped from 10 to 2.** One `VirtualMachine`
   retrieve and one `HostSystem` retrieve now serve all five sheets. Adding the
   seven Phase 1 sheets adds zero walks: they widen the same property union.
 - **`data::SHEETS` is the single registry.** `list_sheets`, `fetch_sheet` and the
@@ -129,10 +131,40 @@ Consequences:
   columns by RVTools label rather than by index, so a new column cannot silently
   shift them. Test count went from 9 to 23.
 
-Not verified against a live vCenter: no property path changed, and no new one was
-introduced, but the refactor itself has only been exercised against the tests and
-`cargo check`. First run against a real vCenter should compare row counts per
-sheet with the pre-refactor build.
+### Verified against a live vCenter, 2026-09-03
+
+Run against `vcf-mgmt-vc91.vcf.soultec.lab` (vCenter 9.1.0.0300 build 25629530;
+3 hosts, 161 VMs incl. 7 templates). Both commits were built and run on the same
+vCenter minutes apart, via `examples/parity_probe` (the five per-sheet fetchers,
+which is exactly what `fetch_all_tables` did at cf626b8) and
+`examples/union_probe` (the shared-snapshot path).
+
+| Sheet | vCenter (derived from raw XML) | cf626b8 | 1ef59b3 per-sheet | 1ef59b3 shared snapshot |
+|---|---:|---:|---:|---:|
+| vInfo | 161 | 161 | 161 | 161 |
+| vHost | 3 | 3 | 3 | 3 |
+| vDisk | 345 | 345 | 345 | 345 |
+| vSnapshot | 3 | 3 | 3 | 3 |
+| vHealth | 166 | 166 | 166 | 166 |
+
+The first column is not the app: it was derived independently from captured
+`RetrievePropertiesEx` responses, replicating each sheet's row logic. So the two
+builds agree with each other *and* with vCenter.
+
+Comparison went further than row counts — every cell was diffed, joining rows on
+a natural key. All five sheets are identical in all three pairings
+(old/new, new-per-sheet/new-shared, old/new-shared) except for live counters
+(`CPU Usage (%)`, `Memory Usage (%)`, `CPU usage %`), which drift between any two
+runs. Column names and counts are identical, no sheet emitted a warning, the
+xlsx exports match sheet-for-sheet and row-for-row, and all 23 unit tests pass.
+
+Caveat worth keeping: this lab runs vSphere Supervisor, so ephemeral Kubernetes
+pod VMs appear and disappear between runs. Comparisons were bracketed to
+distinguish that churn from a code difference; the only key-level differences
+seen were such VMs, never a value difference on a VM present in both runs.
+
+Still unverified: the GUI itself has not been run on Windows — the fetch and
+export paths were driven through the library API, not the Tauri window.
 
 ### Phase 1: the VM-derived sheets
 
