@@ -23,6 +23,7 @@ pub mod vhost;
 pub mod vinfo;
 pub mod vlicense;
 pub mod vmemory;
+pub mod vmultipath;
 pub mod vnetwork;
 pub mod vnic;
 pub mod vpartition;
@@ -68,6 +69,7 @@ pub const SHEETS: &[&SheetSpec] = &[
     &dvport::SPEC,
     &vsc_vmk::SPEC,
     &vdatastore::SPEC,
+    &vmultipath::SPEC,
     &vlicense::SPEC,
     &vhealth::SPEC,
 ];

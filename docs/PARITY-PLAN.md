@@ -25,7 +25,7 @@ Six of RVTools' 27 sheets exist, five of them as UI sheets and one export-only.
 | vSnapshot | 22 | 13 | Partial |
 | vHealth | 3 | 3 (5 of 7 checks) | Partial |
 | vMetaData | 4 | 4 (export only) | Done |
-| The other 2 sheets | | 0 | Missing |
+| vFileInfo | 5 | 0 | Missing |
 
 Missing entirely: vCPU, vMemory, vPartition, vNetwork, vCD, vUSB, vTools,
 vSource, vRP, vCluster, vHBA, vNIC, vSwitch, vPort, dvSwitch, dvPort, vSC_VMK,
@@ -460,6 +460,36 @@ the reference export. Either reverse-engineer it or ship 6 of 7 with a documente
 gap. Do not invent a trigger.
 
 Completing Phase 5 reaches 27 of 27 sheets.
+
+### vMultiPath landed, 2026-09-03 — and it was not a blocker
+
+The plan sized this as an L, on the belief it needed `HostMultipathInfo` from an
+API area the app could not reach. It did not. `config.storageDevice.multipathInfo`
+and `config.storageDevice.scsiLun` both come off the `HostSystem` fetch that
+vHBA and vNIC already do, so the sheet **adds no inventory walk at all**. It was
+one module, like every sheet since Phase 1.
+
+The assumption was never tested until `property_audit` was pointed at the host
+properties and both came back 3/3. Worth remembering the next time a plan calls
+something a blocker: the cost of checking was one query.
+
+The two properties are shaped differently, and the pair is a compact example of
+the rule in `CLAUDE.md`. `scsiLun` is a top-level array, so its elements carry
+the declared type name — `<ScsiLun xsi:type="HostScsiDisk">`. `multipathInfo` is
+a single object, so the LUNs beneath it repeat the *field* name `<lun>`, and each
+LUN's paths repeat `<path>`. Reading either the wrong way yields no rows and no
+error.
+
+A row is a path, not a device: the sheet exists to show that a LUN is reachable
+more than one way and which way is live. Live: 18 rows across 3 hosts, every
+column populated. The lab's disks are local SAS with one path each, so `Working
+path` is true throughout — correct, but not much of a test of the multi-path
+case this sheet is named for.
+
+**26 of 27 sheets.** Only `vFileInfo` remains, and that one is a real blocker:
+it needs `HostDatastoreBrowser` and `SearchDatastoreSubFolders`, a genuinely
+different API area, and the walk is expensive enough that it should be opt-in
+rather than part of every export. It also unlocks vHealth's `Zombie` check.
 
 ### Phase 6: app-level parity
 
