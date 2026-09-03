@@ -4,12 +4,22 @@
 //! `<VirtualMachineSnapshotTree>`. Sizes come from `layoutEx`: each snapshot's
 //! `dataKey` and `memoryKey` index into `layoutEx.file`.
 
-use super::common::{bytes_to_mib, host_names, VmContext, VM_CONTEXT_PROPS};
+use super::common::{bytes_to_mib, VmContext, VM_CONTEXT_PROPS};
+use super::snapshot::{InventorySnapshot, SheetSpec};
 use super::{Cell, Column, Table};
 use crate::vcenter::soap::ManagedObject;
 use crate::vcenter::xml::Element;
-use crate::vcenter::{Session, VCenterConnection};
+use crate::vcenter::VCenterConnection;
 use std::collections::HashMap;
+
+/// What this sheet reads beyond `common::VM_CONTEXT_PROPS`: the snapshot tree,
+/// and the `layoutEx` files the per-snapshot sizes index into.
+pub const VM_PROPS: &[&str] = &[
+    "snapshot.rootSnapshotList",
+    "snapshot.currentSnapshot",
+    "layoutEx.file",
+    "layoutEx.snapshot",
+];
 
 pub fn columns() -> Vec<Column> {
     vec![
@@ -87,20 +97,12 @@ fn snapshot_layout(vm: &ManagedObject) -> HashMap<String, (Option<String>, Optio
         .collect()
 }
 
-pub async fn fetch_vsnapshot_core(session: &Session) -> Result<Vec<Vec<Cell>>, String> {
-    let hosts = host_names(session).await?;
-    let mut props = VM_CONTEXT_PROPS.to_vec();
-    props.extend_from_slice(&[
-        "snapshot.rootSnapshotList",
-        "snapshot.currentSnapshot",
-        "layoutEx.file",
-        "layoutEx.snapshot",
-    ]);
-    let vms = session.soap.retrieve("VirtualMachine", &props).await?;
+pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
+    let hosts = &snap.host_names;
 
     let mut rows = Vec::new();
-    for vm in vms {
-        let Some(ctx) = VmContext::from(&vm, &hosts)? else {
+    for vm in &snap.vms {
+        let Some(ctx) = VmContext::from(vm, hosts)? else {
             continue;
         };
 
@@ -112,8 +114,8 @@ pub async fn fetch_vsnapshot_core(session: &Session) -> Result<Vec<Vec<Cell>>, S
             continue;
         }
 
-        let files = file_layout(&vm);
-        let layout = snapshot_layout(&vm);
+        let files = file_layout(vm);
+        let layout = snapshot_layout(vm);
         let current = vm.str_prop("snapshot.currentSnapshot");
 
         for snap in snapshots {
@@ -158,22 +160,19 @@ pub async fn fetch_vsnapshot_core(session: &Session) -> Result<Vec<Vec<Cell>>, S
     Ok(rows)
 }
 
+pub const SPEC: SheetSpec = SheetSpec {
+    name: "vSnapshot",
+    columns,
+    vm_props: &[VM_CONTEXT_PROPS, VM_PROPS],
+    host_props: &[],
+    rows,
+};
+
 pub async fn fetch_vsnapshot_all(
     conns: &[VCenterConnection],
     cache: &crate::vcenter::SessionCache,
 ) -> Table {
-    let mut table = Table::new("vSnapshot", columns()).with_source_column();
-    for conn in conns {
-        let label = conn.label();
-        match cache.get(conn).await {
-            Ok(session) => match fetch_vsnapshot_core(&session).await {
-                Ok(rows) => table.extend_from(&label, rows),
-                Err(e) => table.warnings.push(format!("{label}: {e}")),
-            },
-            Err(e) => table.warnings.push(format!("{label}: {e}")),
-        }
-    }
-    table
+    super::snapshot::fetch_table(&SPEC, conns, cache).await
 }
 
 #[cfg(test)]

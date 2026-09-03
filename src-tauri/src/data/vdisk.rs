@@ -5,11 +5,16 @@
 //! type; the concrete device type is only in `xsi:type`, so filtering on the
 //! element name would silently yield nothing.
 
-use super::common::{host_names, VmContext, VM_CONTEXT_PROPS};
+use super::common::{VmContext, VM_CONTEXT_PROPS};
+use super::snapshot::{InventorySnapshot, SheetSpec};
 use super::{Cell, Column, Table};
 use crate::vcenter::xml::Element;
-use crate::vcenter::{Session, VCenterConnection};
+use crate::vcenter::VCenterConnection;
 use std::collections::HashMap;
+
+/// What this sheet reads beyond `common::VM_CONTEXT_PROPS`: the device array
+/// the disks come out of.
+pub const VM_PROPS: &[&str] = &["config.hardware.device"];
 
 pub fn columns() -> Vec<Column> {
     vec![
@@ -66,15 +71,12 @@ fn controller_labels(devices: &[&Element]) -> HashMap<String, String> {
         .collect()
 }
 
-pub async fn fetch_vdisk_core(session: &Session) -> Result<Vec<Vec<Cell>>, String> {
-    let hosts = host_names(session).await?;
-    let mut props = VM_CONTEXT_PROPS.to_vec();
-    props.push("config.hardware.device");
-    let vms = session.soap.retrieve("VirtualMachine", &props).await?;
+pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
+    let hosts = &snap.host_names;
 
     let mut rows = Vec::new();
-    for vm in vms {
-        let Some(ctx) = VmContext::from(&vm, &hosts)? else {
+    for vm in &snap.vms {
+        let Some(ctx) = VmContext::from(vm, hosts)? else {
             continue;
         };
         let devices = vm.array_prop("config.hardware.device");
@@ -130,20 +132,17 @@ pub async fn fetch_vdisk_core(session: &Session) -> Result<Vec<Vec<Cell>>, Strin
     Ok(rows)
 }
 
+pub const SPEC: SheetSpec = SheetSpec {
+    name: "vDisk",
+    columns,
+    vm_props: &[VM_CONTEXT_PROPS, VM_PROPS],
+    host_props: &[],
+    rows,
+};
+
 pub async fn fetch_vdisk_all(
     conns: &[VCenterConnection],
     cache: &crate::vcenter::SessionCache,
 ) -> Table {
-    let mut table = Table::new("vDisk", columns()).with_source_column();
-    for conn in conns {
-        let label = conn.label();
-        match cache.get(conn).await {
-            Ok(session) => match fetch_vdisk_core(&session).await {
-                Ok(rows) => table.extend_from(&label, rows),
-                Err(e) => table.warnings.push(format!("{label}: {e}")),
-            },
-            Err(e) => table.warnings.push(format!("{label}: {e}")),
-        }
-    }
-    table
+    super::snapshot::fetch_table(&SPEC, conns, cache).await
 }

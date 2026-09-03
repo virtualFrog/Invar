@@ -11,10 +11,24 @@ pub mod vhealth;
 pub mod vhost;
 pub mod vinfo;
 pub mod insights;
+pub mod snapshot;
 pub mod topology;
 pub mod vsnapshot;
 
 use serde::Serialize;
+use snapshot::SheetSpec;
+
+/// Every sheet the app knows about, in tab order.
+///
+/// This is the single registry: `list_sheets`, `fetch_sheet` and the export all
+/// drive off it, so adding a sheet is one module plus one line here.
+pub const SHEETS: &[&SheetSpec] = &[
+    &vinfo::SPEC,
+    &vhost::SPEC,
+    &vdisk::SPEC,
+    &vsnapshot::SPEC,
+    &vhealth::SPEC,
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]

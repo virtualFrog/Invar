@@ -5,7 +5,7 @@
 //! counts. Nothing here queries a property that a sheet has not already proven
 //! against the live vCenter.
 
-use super::common::vm_totals_by_host;
+use super::common::{vm_totals_by_host, VM_TOTALS_PROPS};
 use super::topology::{fetch_topology_core, DatastoreNode};
 use crate::vcenter::{Session, VCenterConnection};
 use serde::Serialize;
@@ -95,7 +95,10 @@ fn round2(v: f64) -> f64 {
 
 async fn accumulate(session: &Session, server: &str, out: &mut Insights) -> Result<(), String> {
     let topology = fetch_topology_core(session, server).await?;
-    let vm_totals = vm_totals_by_host(session).await?;
+    // The dashboard is not a sheet, so it does its own VM read rather than
+    // joining a sheet snapshot. Same property set, so the rollup is identical.
+    let vms = session.soap.retrieve("VirtualMachine", VM_TOTALS_PROPS).await?;
+    let vm_totals = vm_totals_by_host(&vms);
 
     out.servers.push(server.to_string());
     out.datacenters += topology.datacenters.len();

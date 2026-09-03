@@ -1,0 +1,958 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>STTools Parity Roadmap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --ground:      #f6f7f9;
+    --surface:     #ffffff;
+    --surface-sunk:#eef1f5;
+    --ink:         #121821;
+    --ink-2:       #34404f;
+    --muted:       #59657a;
+    --line:        #dce1e8;
+    --line-strong: #c3ccd8;
+    --mark:        #00909e;
+    --mark-soft:   #b8e3e8;
+    --blocked:     #b4780f;
+    --blocked-soft:#efdcb6;
+    --track:       #e3e7ed;
+    --focus:       #00909e;
+
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --serif: "Source Serif 4", ui-serif, Georgia, "Times New Roman", serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+    --measure: 68ch;
+    --wide: 1120px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground:      #10151b;
+      --surface:     #171d25;
+      --surface-sunk:#131920;
+      --ink:         #e3e9f1;
+      --ink-2:       #c3ccd9;
+      --muted:       #8a97a9;
+      --line:        #262f3b;
+      --line-strong: #384453;
+      --mark:        #15a0ae;
+      --mark-soft:   #1c4a52;
+      --blocked:     #c2871f;
+      --blocked-soft:#4a3a17;
+      --track:       #232c37;
+      --focus:       #2fc0cf;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground:      #10151b;
+    --surface:     #171d25;
+    --surface-sunk:#131920;
+    --ink:         #e3e9f1;
+    --ink-2:       #c3ccd9;
+    --muted:       #8a97a9;
+    --line:        #262f3b;
+    --line-strong: #384453;
+    --mark:        #15a0ae;
+    --mark-soft:   #1c4a52;
+    --blocked:     #c2871f;
+    --blocked-soft:#4a3a17;
+    --track:       #232c37;
+    --focus:       #2fc0cf;
+  }
+
+  /* The artifact host supplies these; a standalone file needs its own. */
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; }
+  img { max-width: 100%; }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: var(--wide);
+    margin: 0 auto;
+    padding: clamp(28px, 5vw, 72px) clamp(18px, 4vw, 44px) 96px;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(40px, 5vw, 68px);
+  }
+
+  .col { max-width: var(--measure); }
+
+  h1, h2, h3, .eyebrow, .chip, .num, th, .eyebrow-lg {
+    font-family: var(--sans);
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  h1 {
+    font-size: clamp(30px, 4.6vw, 46px);
+    line-height: 1.08;
+    font-weight: 600;
+    letter-spacing: -0.022em;
+    margin: 10px 0 0;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    margin: 18px 0 0;
+    font-size: clamp(17px, 1.5vw, 19.5px);
+    line-height: 1.55;
+    color: var(--ink-2);
+    max-width: 58ch;
+    text-wrap: pretty;
+  }
+
+  h2 {
+    font-size: clamp(21px, 2.4vw, 26px);
+    font-weight: 600;
+    letter-spacing: -0.014em;
+    line-height: 1.2;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.006em;
+    margin: 0 0 6px;
+  }
+
+  p { margin: 0 0 14px; text-wrap: pretty; }
+  p:last-child { margin-bottom: 0; }
+
+  code, .mono { font-family: var(--mono); font-size: 0.88em; }
+  code {
+    background: var(--surface-sunk);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 0.08em 0.34em;
+  }
+
+  a { color: var(--mark); text-underline-offset: 2px; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+
+  /* ---- masthead ------------------------------------------------------- */
+
+  header .rule {
+    height: 3px;
+    width: 56px;
+    background: var(--mark);
+    margin-bottom: 22px;
+  }
+
+  .figures {
+    margin-top: 34px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+  .figure {
+    background: var(--surface);
+    padding: 16px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .figure .num {
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.05;
+  }
+  .figure .num small {
+    font-size: 17px;
+    font-weight: 500;
+    color: var(--muted);
+    letter-spacing: -0.01em;
+  }
+  .figure .cap {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .figure .note {
+    font-size: 13.5px;
+    color: var(--muted);
+    line-height: 1.4;
+    margin-top: 4px;
+  }
+
+  /* ---- coverage matrix ------------------------------------------------ */
+
+  .matrix-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px 24px;
+    margin-bottom: 6px;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 20px; height: 8px; display: inline-block; border-radius: 2px; }
+  .swatch.done    { background: var(--mark); }
+  .swatch.blocked { background: var(--blocked); }
+  .swatch.todo    { background: var(--track); border: 1px solid var(--line-strong); }
+
+  .matrix {
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+
+  .sheet {
+    background: var(--surface);
+    padding: 11px 14px 12px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "name count" "bar bar" "meta meta";
+    align-items: baseline;
+    gap: 6px 10px;
+    position: relative;
+  }
+  .sheet:hover, .sheet:focus-within { background: var(--surface-sunk); }
+
+  .sheet .name {
+    grid-area: name;
+    font-family: var(--mono);
+    font-size: 13.5px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .sheet .count {
+    grid-area: count;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  .sheet .count b { color: var(--ink-2); font-weight: 600; }
+
+  .bar {
+    grid-area: bar;
+    height: 7px;
+    background: var(--track);
+    border-radius: 3.5px;
+    overflow: hidden;
+  }
+  .bar i {
+    display: block;
+    height: 100%;
+    background: var(--mark);
+    border-radius: 3.5px;
+    min-width: 0;
+  }
+  /* A blocked sheet has zero columns, so a zero-width fill would read exactly
+     like "not started". Tint the whole track instead, and the chip names it. */
+  .sheet.is-blocked .bar {
+    background: var(--blocked-soft);
+    box-shadow: inset 3px 0 0 var(--blocked);
+  }
+  .sheet.is-blocked .bar i { background: var(--blocked); }
+
+  .sheet .meta {
+    grid-area: meta;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 1px;
+  }
+  .chip {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--line-strong);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .chip.state-done    { color: var(--mark); border-color: var(--mark); }
+  .chip.state-partial { color: var(--mark); border-color: var(--mark-soft); background: color-mix(in srgb, var(--mark) 8%, transparent); }
+  .chip.state-blocked { color: var(--blocked); border-color: var(--blocked-soft); background: color-mix(in srgb, var(--blocked) 10%, transparent); }
+  .chip.phase { border-style: dashed; }
+
+  /* ---- bottleneck callout --------------------------------------------- */
+
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--mark);
+    padding: clamp(20px, 3vw, 30px) clamp(18px, 3vw, 34px);
+  }
+  .callout h2 { margin-bottom: 12px; }
+  .callout .col { max-width: 64ch; }
+
+  pre {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.55;
+    background: var(--surface-sunk);
+    border: 1px solid var(--line);
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 16px 0;
+    color: var(--ink-2);
+  }
+  pre b { color: var(--mark); font-weight: 500; }
+
+  .walks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 4px 0 16px;
+    align-items: center;
+  }
+  .walk {
+    width: 13px; height: 26px;
+    background: var(--mark);
+    border-radius: 2px;
+  }
+  .walk.ghost { background: var(--track); border: 1px dashed var(--line-strong); }
+  .walks .lbl {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-left: 8px;
+  }
+
+  /* ---- phase progression chart ---------------------------------------- */
+
+  .progression {
+    margin-top: 22px;
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+    align-items: end;
+    padding: 18px 16px 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-bottom: none;
+  }
+  .step { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .step .v {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink-2);
+  }
+  .step .col-bar {
+    width: 100%;
+    background: var(--mark);
+    border-radius: 3px 3px 0 0;
+    min-height: 4px;
+  }
+  .step.flat .col-bar { background: var(--mark-soft); }
+  .prog-axis {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+    padding: 8px 16px 14px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-top: 1px solid var(--line-strong);
+  }
+  .prog-axis span {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  /* ---- phases ---------------------------------------------------------- */
+
+  .phases { display: flex; flex-direction: column; gap: 1px; background: var(--line); border: 1px solid var(--line); }
+
+  .phase {
+    background: var(--surface);
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 0 clamp(16px, 2.5vw, 30px);
+    padding: clamp(18px, 2.6vw, 26px) clamp(16px, 3vw, 28px);
+  }
+  .phase .marker {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .phase .marker .n {
+    font-family: var(--sans);
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    color: var(--mark);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .phase .body { max-width: 62ch; }
+  .phase .body > p { font-size: 15.5px; }
+
+  .delta {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+  .delta b { color: var(--mark); font-weight: 600; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 4px;
+    font-size: 14.5px;
+  }
+  .table-wrap { overflow-x: auto; }
+  th, td {
+    text-align: left;
+    padding: 8px 12px 8px 0;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  th {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom-color: var(--line-strong);
+    white-space: nowrap;
+  }
+  td.size {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--mark);
+    white-space: nowrap;
+  }
+  td .mono { color: var(--ink-2); }
+
+  ul.plain { margin: 8px 0 0; padding-left: 1.1em; }
+  ul.plain li { margin-bottom: 7px; }
+  ul.plain li::marker { color: var(--line-strong); }
+
+  /* ---- risks ----------------------------------------------------------- */
+
+  .risks { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+  .risk { background: var(--surface); padding: 20px 22px 22px; }
+  .risk .eyebrow { color: var(--blocked); margin-bottom: 8px; display: block; }
+  .risk p { font-size: 15px; margin-bottom: 10px; }
+
+  footer {
+    border-top: 1px solid var(--line);
+    padding-top: 20px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  @media (max-width: 620px) {
+    .phase { grid-template-columns: 1fr; gap: 12px; }
+    .phase .marker { flex-direction: row; align-items: baseline; gap: 10px; }
+    .progression, .prog-axis { grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="rule"></div>
+    <div class="eyebrow">STTools · fork of VMware-Explore-Hackathon-2026-Live</div>
+    <h1>The road from 6 sheets to 27</h1>
+    <p class="standfirst">
+      RVTools ships 27 worksheets. STTools ships six. This is where the gap sits,
+      which piece of architecture decides how expensive closing it will be, and the
+      order that costs the least.
+    </p>
+
+    <div class="figures">
+      <div class="figure">
+        <span class="num">6<small> / 27</small></span>
+        <span class="cap">Sheets</span>
+        <span class="note">Five in the UI, plus vMetaData written on export only.</span>
+      </div>
+      <div class="figure">
+        <span class="num">119<small> / 722</small></span>
+        <span class="cap">Columns</span>
+        <span class="note">Declared columns against RVTools' full lists. An indicator, not a score: a few STTools columns are additions or unit renames.</span>
+      </div>
+      <div class="figure">
+        <span class="num">2</span>
+        <span class="cap">Hard blockers</span>
+        <span class="note">vFileInfo and vMultiPath each need a query pattern the SOAP client cannot express yet.</span>
+      </div>
+    </div>
+  </header>
+
+  <section>
+    <div class="matrix-head">
+      <h2 style="margin:0">Coverage, in RVTools' own sheet order</h2>
+      <div class="legend">
+        <span><i class="swatch done"></i>implemented</span>
+        <span><i class="swatch blocked"></i>blocked</span>
+        <span><i class="swatch todo"></i>not started</span>
+      </div>
+    </div>
+    <p class="col" style="color:var(--muted); font-size:15px;">
+      The order is the one <code>export.rs</code> already writes workbooks in, so this
+      reads the same way a finished export does. Each bar is implemented columns over
+      RVTools' column count for that sheet.
+    </p>
+    <div class="matrix" id="matrix"></div>
+  </section>
+
+  <section class="callout">
+    <div class="col">
+      <div class="eyebrow">The decision that sizes everything else</div>
+      <h2>One inventory walk per sheet does not survive 27 sheets</h2>
+      <p>
+        Four sheets each call <code>retrieve("VirtualMachine", ...)</code> on their own,
+        and <code>common.rs</code> adds two more walks for host names and per-host VM
+        totals. Five sheets currently cost roughly six full inventory passes.
+      </p>
+      <div class="walks" aria-hidden="true">
+        <i class="walk"></i><i class="walk"></i><i class="walk"></i>
+        <i class="walk"></i><i class="walk"></i><i class="walk"></i>
+        <span class="lbl">today: 6 passes for 5 sheets</span>
+      </div>
+      <div class="walks" aria-hidden="true">
+        <i class="walk"></i><i class="walk"></i><i class="walk"></i><i class="walk"></i>
+        <i class="walk"></i><i class="walk"></i><i class="walk"></i><i class="walk"></i>
+        <i class="walk ghost"></i><i class="walk ghost"></i><i class="walk ghost"></i>
+        <i class="walk ghost"></i><i class="walk ghost"></i><i class="walk ghost"></i>
+        <i class="walk ghost"></i><i class="walk ghost"></i>
+        <span class="lbl">same approach at 27 sheets</span>
+      </div>
+      <p>
+        Ten of the 27 sheets are derived from <code>VirtualMachine</code> properties.
+        Fetch once per vCenter per export instead, into a snapshot the sheets read from:
+      </p>
+      <pre><b>InventorySnapshot</b> {
+    vms:         Vec&lt;ManagedObject&gt;,   // union of every sheet's VM property set
+    hosts:       Vec&lt;ManagedObject&gt;,   // union of every sheet's host property set
+    datastores, clusters, resource_pools, dvswitches, ...
+}</pre>
+      <p>
+        Each sheet becomes <code>fn rows(&amp;InventorySnapshot) -&gt; Vec&lt;Vec&lt;Cell&gt;&gt;</code>.
+        The second payoff matters as much as the speed: a sheet that is a pure function
+        over a snapshot is testable against one captured XML fixture, with no live
+        vCenter. Today only vHealth (8 tests) and vSnapshot (1 test) have any.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Sheets shipped after each phase</h2>
+    <p class="col" style="color:var(--muted); font-size:15px;">
+      Phase 0 and Phase 4 deliberately add no sheets. Phase 0 buys the architecture the
+      rest of the plan spends; Phase 4 deepens columns on sheets that already exist.
+    </p>
+    <div class="progression" role="img" aria-label="Sheets shipped after each phase: today 6, phase 0 stays 6, phase 1 reaches 13, phase 2 reaches 20, phase 3 reaches 25, phase 4 stays 25, phase 5 reaches all 27.">
+      <div class="step flat"><span class="v">6</span><div class="col-bar" style="height:52px"></div></div>
+      <div class="step flat"><span class="v">6</span><div class="col-bar" style="height:52px"></div></div>
+      <div class="step"><span class="v">13</span><div class="col-bar" style="height:112px"></div></div>
+      <div class="step"><span class="v">20</span><div class="col-bar" style="height:173px"></div></div>
+      <div class="step"><span class="v">25</span><div class="col-bar" style="height:216px"></div></div>
+      <div class="step flat"><span class="v">25</span><div class="col-bar" style="height:216px"></div></div>
+      <div class="step"><span class="v">27</span><div class="col-bar" style="height:234px"></div></div>
+    </div>
+    <div class="prog-axis">
+      <span>Today</span><span>P0</span><span>P1</span><span>P2</span><span>P3</span><span>P4</span><span>P5</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>The phases</h2>
+    <p class="col" style="color:var(--muted); font-size:15px; margin-bottom:20px;">
+      Numbered because the order is load-bearing, not for decoration: Phase 0 is what
+      makes Phases 1 to 4 cheap, and Phase 5 is gated on query patterns that do not
+      exist yet.
+    </p>
+
+    <div class="phases">
+
+      <article class="phase">
+        <div class="marker"><span class="n">0</span><span>Foundations</span></div>
+        <div class="body">
+          <h3>Build the snapshot and the path index</h3>
+          <p>
+            No new sheets. Still the right first move: the inventory path index alone adds
+            Datacenter, Cluster and Folder to about twenty sheets, and doing it afterwards
+            means editing twenty modules instead of one.
+          </p>
+          <div class="table-wrap">
+          <table>
+            <thead><tr><th>Item</th><th>Why</th><th>Size</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><span class="mono">InventorySnapshot</span></td>
+                <td>Sets the marginal cost of the remaining 21 sheets</td>
+                <td class="size">L</td>
+              </tr>
+              <tr>
+                <td>Path index</td>
+                <td>Appended generically the way <code>VI SDK Server</code> already is, but needs <span class="mono">parent</span> walks, a different query shape than the flat reads used so far</td>
+                <td class="size">M</td>
+              </tr>
+              <tr>
+                <td>XML fixtures</td>
+                <td>Every later sheet ships with a parse test instead of a live-only check</td>
+                <td class="size">M</td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+      </article>
+
+      <article class="phase">
+        <div class="marker"><span class="n">1</span><span>VM sheets</span></div>
+        <div class="body">
+          <h3>Seven sheets off one snapshot</h3>
+          <p>
+            vCPU, vMemory, vTools, vNetwork, vPartition, vCD and vUSB all read the same VM
+            snapshot. No new query pattern, no new object type. This is the cheapest large
+            block of parity in the plan, and small per sheet once Phase 0 exists.
+          </p>
+          <p class="delta">6 <b>&rarr;</b> 13 sheets · size M in total</p>
+        </div>
+      </article>
+
+      <article class="phase">
+        <div class="marker"><span class="n">2</span><span>Host &amp; network</span></div>
+        <div class="body">
+          <h3>Five from the host snapshot, two new types</h3>
+          <p>
+            vHBA, vNIC, vSwitch, vPort and vSC_VMK come out of
+            <code>config.storageDevice</code> and <code>config.network</code> on hosts you
+            already fetch. dvSwitch and dvPort need
+            <span class="mono">DistributedVirtualSwitch</span> and
+            <span class="mono">DistributedVirtualPortgroup</span>, but both are still plain
+            flat retrieves.
+          </p>
+          <p class="delta">13 <b>&rarr;</b> 20 sheets · size M</p>
+        </div>
+      </article>
+
+      <article class="phase">
+        <div class="marker"><span class="n">3</span><span>Infrastructure</span></div>
+        <div class="body">
+          <h3>Five sheets, two of them nearly free</h3>
+          <div class="table-wrap">
+          <table>
+            <thead><tr><th>Sheet</th><th>Source</th><th>Note</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">vCluster</td><td class="mono">ClusterComputeResource</td><td>topology.rs already retrieves this type</td></tr>
+              <tr><td class="mono">vDatastore</td><td class="mono">Datastore</td><td>topology.rs already retrieves this type</td></tr>
+              <tr><td class="mono">vRP</td><td class="mono">ResourcePool</td><td>New type, flat read</td></tr>
+              <tr><td class="mono">vSource</td><td class="mono">ServiceContent.about</td><td>Already fetched by <code>test_connection</code>; a direct call, not a ContainerView</td></tr>
+              <tr><td class="mono">vLicense</td><td class="mono">LicenseManager</td><td>Direct moref call; <code>retrieve()</code> cannot express it as written</td></tr>
+            </tbody>
+          </table>
+          </div>
+          <p class="delta" style="margin-top:12px">20 <b>&rarr;</b> 25 sheets · size M</p>
+        </div>
+      </article>
+
+      <article class="phase">
+        <div class="marker"><span class="n">4</span><span>Column depth</span></div>
+        <div class="body">
+          <h3>Fill out the sheets that already exist</h3>
+          <p>
+            vInfo 25 to 89, vHost 49 to 70, vDisk 25 to 40, vSnapshot 13 to 22. Flat property
+            additions, gated on extending the verified property reference, which holds 89
+            paths today. This phase parallelises well: the sheets do not interact.
+          </p>
+          <p class="delta">25 sheets, +90 columns · size M</p>
+        </div>
+      </article>
+
+      <article class="phase">
+        <div class="marker"><span class="n">5</span><span>Blockers</span></div>
+        <div class="body">
+          <h3>The two query patterns that do not exist yet</h3>
+          <div class="table-wrap">
+          <table>
+            <thead><tr><th>Item</th><th>Needs</th><th>Unlocks</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>Datastore file browsing</td>
+                <td class="mono">HostDatastoreBrowser + SearchDatastoreSubFolders</td>
+                <td>vFileInfo and the vHealth Zombie check</td>
+              </tr>
+              <tr>
+                <td>Storage path enumeration</td>
+                <td class="mono">HostMultipathInfo / scsiLun</td>
+                <td>vMultiPath (32 columns)</td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+          <p style="margin-top:12px">
+            Both are large, and the datastore walk is expensive at runtime, so it wants to be
+            opt-in rather than part of every export. The seventh vHealth check, Performance
+            tip, has no determinable trigger in the reference export: either reverse-engineer
+            it or ship 6 of 7 with the gap documented. Do not invent a trigger.
+          </p>
+          <p class="delta">25 <b>&rarr;</b> 27 sheets · size L</p>
+        </div>
+      </article>
+
+      <article class="phase">
+        <div class="marker"><span class="n">6</span><span>The product</span></div>
+        <div class="body">
+          <h3>Parity is not only sheets</h3>
+          <p>RVTools does all of this. STTools does none of it yet.</p>
+          <ul class="plain">
+            <li><b>Headless export.</b> RVTools' <code>-c ExportAll2xls</code> is how people schedule it, and it is also the README's Linux-service goal. Needs a second binary, which is why <code>default-run</code> matters.</li>
+            <li><b>CSV export</b> per sheet, alongside xlsx.</li>
+            <li><b>Email delivery</b> of a finished export over SMTP.</li>
+            <li><b>Zip and password-protect</b> the export.</li>
+            <li><b>Search, filter and column sort</b> in the grid.</li>
+            <li><b>Connect straight to a standalone ESXi host</b>, not only to vCenter.</li>
+            <li><b>Custom attributes and vSphere tags</b> as columns.</li>
+          </ul>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Carry these alongside, not afterwards</h2>
+    <div class="risks">
+      <div class="risk">
+        <span class="eyebrow">Security</span>
+        <h3>Stored passwords are cleartext</h3>
+        <p>
+          <code>config.json</code> holds vCenter passwords as plain strings.
+          <code>restrict_permissions</code> chmods it to <span class="mono">0600</span>,
+          but only on Unix: the <code>#[cfg(not(unix))]</code> arm is an empty function, so
+          on Windows, a first-class target here, the file gets default ACLs.
+        </p>
+        <p>RVTools encrypts its stored passwords. Move to the OS credential store.</p>
+      </div>
+      <div class="risk">
+        <span class="eyebrow">Security</span>
+        <h3>Authenticate the web service</h3>
+        <p>
+          If the Linux service mode in Phase 6 happens, it needs auth from the first commit.
+          The reference implementation bound <span class="mono">0.0.0.0</span> with no auth
+          and an endpoint that returned stored vCenter credentials in cleartext.
+        </p>
+        <p>That defect is documented. Do not inherit it.</p>
+      </div>
+      <div class="risk">
+        <span class="eyebrow">Blocked</span>
+        <h3>No vCenter to develop against</h3>
+        <p>
+          The documented lab, <span class="mono">vcsa91.vcrocs.local</span>, belongs to the
+          original author and does not resolve (checked: NXDOMAIN). Every new sheet needs
+          live queries before its property paths can be written.
+        </p>
+        <p>This blocks Phase 1, and no amount of Rust solves it.</p>
+      </div>
+      <div class="risk">
+        <span class="eyebrow">Open question</span>
+        <h3>Which RVTools version is the target?</h3>
+        <p>
+          The column spec was derived from the export in <code>reference/</code>, which is
+          RVTools 4.6 from August 2024. Every count on this page is sized against those
+          lists.
+        </p>
+        <p>
+          If the target is a newer shipping release, generate a fresh export and re-derive
+          the sheet and column lists before Phase 1 starts.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="callout">
+    <div class="col">
+      <div class="eyebrow">Recommended first slice</div>
+      <h2>Phase 0 items 1 and 2, then all of Phase 1</h2>
+      <p>
+        One architectural change plus seven sheets that share a single code path. It moves
+        the app from 6 sheets to 13, adds Datacenter, Cluster and Folder to every sheet at
+        once, and produces the fixture corpus that makes Phases 2 to 4 testable without a
+        live vCenter for every change.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    Sources: docs/RVTOOLS-SHEETS-AND-COLUMNS.md for RVTools column counts; declared
+    <span class="mono">Column::</span> definitions in <span class="mono">src-tauri/src/data/</span>
+    for the STTools side. Build verified on 2026-09-03: cargo check clean, 9 tests passing.
+    Column totals exclude nothing, so they include RVTools boilerplate columns repeated across sheets.
+  </footer>
+
+</div>
+
+<script>
+  const SHEETS = [
+    ["vInfo",       89, 25, "partial", "P4"],
+    ["vCPU",        30,  0, "todo",    "P1"],
+    ["vMemory",     34,  0, "todo",    "P1"],
+    ["vDisk",       40, 25, "partial", "P4"],
+    ["vPartition",  22,  0, "todo",    "P1"],
+    ["vNetwork",    27,  0, "todo",    "P1"],
+    ["vCD",         21,  0, "todo",    "P1"],
+    ["vUSB",        26,  0, "todo",    "P1"],
+    ["vSnapshot",   22, 13, "partial", "P4"],
+    ["vTools",      30,  0, "todo",    "P1"],
+    ["vSource",     12,  0, "todo",    "P3"],
+    ["vRP",         46,  0, "todo",    "P3"],
+    ["vCluster",    32,  0, "todo",    "P3"],
+    ["vHost",       70, 49, "partial", "P4"],
+    ["vHBA",        11,  0, "todo",    "P2"],
+    ["vNIC",        12,  0, "todo",    "P2"],
+    ["vSwitch",     21,  0, "todo",    "P2"],
+    ["vPort",       20,  0, "todo",    "P2"],
+    ["dvSwitch",    27,  0, "todo",    "P2"],
+    ["dvPort",      38,  0, "todo",    "P2"],
+    ["vSC_VMK",     13,  0, "todo",    "P2"],
+    ["vDatastore",  27,  0, "todo",    "P3"],
+    ["vMultiPath",  32,  0, "blocked", "P5"],
+    ["vLicense",     8,  0, "todo",    "P3"],
+    ["vFileInfo",    5,  0, "blocked", "P5"],
+    // vHealth is the one sheet measured in checks rather than columns: all 3 of
+    // its RVTools columns exist, the gap is Zombie and Performance tip.
+    ["vHealth",       7,  5, "partial", "P5", "checks"],
+    ["vMetaData",     4,  4, "done",    "—"],
+  ];
+
+  const STATE_LABEL = {
+    done: "Done",
+    partial: "Partial",
+    todo: "Not started",
+    blocked: "Blocked",
+  };
+
+  const NOTE = {
+    vMetaData: "export only",
+  };
+
+  const matrix = document.getElementById("matrix");
+  const frag = document.createDocumentFragment();
+
+  for (const [name, total, have, state, phase, unit] of SHEETS) {
+    const pct = total > 0 ? Math.round((have / total) * 100) : 0;
+    const measure = unit || "columns";
+
+    const el = document.createElement("div");
+    el.className = "sheet" + (state === "blocked" ? " is-blocked" : "");
+    el.tabIndex = 0;
+    el.title = `${name}: ${have} of ${total} ${measure} (${pct}%) · ${STATE_LABEL[state]}`
+      + (phase !== "—" ? ` · ${phase}` : "");
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "name";
+    nameEl.textContent = name;
+
+    const countEl = document.createElement("span");
+    countEl.className = "count";
+    const strong = document.createElement("b");
+    strong.textContent = have;
+    countEl.append(strong, " / " + total + (unit ? " " + unit : ""));
+
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    const fill = document.createElement("i");
+    // A blocked sheet has no columns yet; show the full track as its own state
+    // rather than a zero-width bar that reads identically to "not started".
+    fill.style.width = pct + "%";
+    bar.appendChild(fill);
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const stateChip = document.createElement("span");
+    stateChip.className = "chip state-" + state;
+    stateChip.textContent = STATE_LABEL[state];
+    meta.appendChild(stateChip);
+
+    if (phase !== "—") {
+      const phaseChip = document.createElement("span");
+      phaseChip.className = "chip phase";
+      phaseChip.textContent = phase;
+      meta.appendChild(phaseChip);
+    }
+    if (NOTE[name]) {
+      const note = document.createElement("span");
+      note.className = "chip";
+      note.textContent = NOTE[name];
+      meta.appendChild(note);
+    }
+
+    el.append(nameEl, countEl, bar, meta);
+    frag.appendChild(el);
+  }
+
+  matrix.appendChild(frag);
+</script>
+
+</body>
+</html>

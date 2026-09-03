@@ -165,6 +165,24 @@ Tauri commands are thin wrappers around these. This is what makes a web-server
 binary possible later without touching any query logic — retrofitting it meant
 mechanically rewriting 21 functions.
 
+### One inventory fetch, not one per sheet
+
+Sheets are **pure functions over an `InventorySnapshot`** (`data/snapshot.rs`).
+The snapshot is fetched once per vCenter with the union of the requested sheets'
+property sets; a sheet does no I/O of its own.
+
+- **Never add a `retrieve` call inside a sheet.** Declare the properties in the
+  sheet's `SheetSpec` and read them off the snapshot. Sheets used to walk the
+  inventory themselves and five of them cost six full passes; ten of RVTools' 27
+  sheets are VM-derived, so that shape does not scale.
+- A sheet composes shared property groups (`&[VM_CONTEXT_PROPS, VM_PROPS]`)
+  rather than restating them, so there is one definition of each group.
+- `data::SHEETS` is the single registry. Adding a sheet is a new module plus one
+  line there; `lib.rs` and the frontend need no edit.
+- Because sheets are pure, they are testable with no vCenter:
+  `snapshot::test_support` builds managed objects from XML fragments. Look up
+  columns by RVTools label, never by index.
+
 ### Design for multiple vCenters from the start
 
 Config should hold a **list** of connections, not one. Wrap each per-server

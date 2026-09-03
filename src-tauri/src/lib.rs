@@ -46,11 +46,11 @@ async fn test_connection(conn: VCenterConnection, state: tauri::State<'_, AppSta
     Ok(full_name)
 }
 
-/// Sheets the UI can ask for, in tab order. One list, so adding a sheet is a
-/// single edit here plus its module.
+/// Sheets the UI can ask for, in tab order. Driven off `data::SHEETS`, so
+/// adding a sheet needs no edit here.
 #[tauri::command]
 fn list_sheets() -> Vec<&'static str> {
-    vec!["vInfo", "vHost", "vDisk", "vSnapshot", "vHealth"]
+    data::SHEETS.iter().map(|s| s.name).collect()
 }
 
 #[tauri::command]
@@ -59,14 +59,13 @@ async fn fetch_sheet(sheet: String, state: tauri::State<'_, AppState>) -> Result
     if conns.is_empty() {
         return Err("No vCenter connections configured — add one in Settings.".into());
     }
-    match sheet.as_str() {
-        "vInfo" => Ok(data::vinfo::fetch_vinfo_all(&conns, &state.cache).await),
-        "vHost" => Ok(data::vhost::fetch_vhost_all(&conns, &state.cache).await),
-        "vDisk" => Ok(data::vdisk::fetch_vdisk_all(&conns, &state.cache).await),
-        "vSnapshot" => Ok(data::vsnapshot::fetch_vsnapshot_all(&conns, &state.cache).await),
-        "vHealth" => Ok(data::vhealth::fetch_vhealth_all(&conns, &state.cache).await),
-        other => Err(format!("Unknown sheet: {other}")),
-    }
+    let spec = data::SHEETS
+        .iter()
+        .find(|s| s.name == sheet)
+        .ok_or_else(|| format!("Unknown sheet: {sheet}"))?;
+    // One sheet fetches only the properties that sheet reads, so opening a tab
+    // does not pay for the whole export's property union.
+    Ok(data::snapshot::fetch_table(spec, &conns, &state.cache).await)
 }
 
 /// Fetch every sheet the app knows about, for the export.
@@ -74,19 +73,18 @@ async fn fetch_sheet(sheet: String, state: tauri::State<'_, AppState>) -> Result
 /// Returns the tables plus the servers they came from, and never fails as a
 /// whole: a sheet that errors contributes its warning and an empty table, so an
 /// export is never silently short of a sheet without saying so.
+///
+/// Every sheet is built from one snapshot per vCenter, so the cost is one
+/// inventory walk per object type rather than one per sheet.
 async fn fetch_all_tables(state: &AppState) -> Result<(Vec<Table>, Vec<String>), String> {
     let conns = state.connections()?;
     if conns.is_empty() {
         return Err("No vCenter connections configured — add one in Settings.".into());
     }
     let servers = conns.iter().map(|c| c.label()).collect();
-    let tables = vec![
-        data::vinfo::fetch_vinfo_all(&conns, &state.cache).await,
-        data::vhost::fetch_vhost_all(&conns, &state.cache).await,
-        data::vdisk::fetch_vdisk_all(&conns, &state.cache).await,
-        data::vsnapshot::fetch_vsnapshot_all(&conns, &state.cache).await,
-        data::vhealth::fetch_vhealth_all(&conns, &state.cache).await,
-    ];
+    // One inventory fetch per vCenter, shared by every sheet, rather than one
+    // walk per sheet.
+    let tables = data::snapshot::fetch_tables(data::SHEETS, &conns, &state.cache).await;
     Ok((tables, servers))
 }
 

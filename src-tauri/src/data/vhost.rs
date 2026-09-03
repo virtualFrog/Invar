@@ -4,12 +4,17 @@
 //! vSwitch, vPort and vSC_VMK, so those sheets can reuse `PROPS` rather than
 //! re-querying. Every path below was read off the live vCenter first.
 
-use super::common::{bytes_to_gib, ratio, vm_totals_by_host, HostVmTotals};
+use super::common::{bytes_to_gib, ratio, vm_totals_by_host, HostVmTotals, VM_TOTALS_PROPS};
+use super::snapshot::{InventorySnapshot, SheetSpec};
 use super::{Cell, Column, Table};
 use crate::vcenter::soap::ManagedObject;
-use crate::vcenter::{Session, VCenterConnection};
+use crate::vcenter::VCenterConnection;
 
-const PROPS: &[&str] = &[
+/// `HostSystem` properties this sheet reads.
+///
+/// The same query also carries the arrays behind vNIC, vHBA, vSwitch, vPort and
+/// vSC_VMK, so those sheets can declare these props and share this one fetch.
+pub const HOST_PROPS: &[&str] = &[
     "name",
     "overallStatus",
     "runtime.connectionState",
@@ -168,12 +173,13 @@ fn memory_tiering_type(host: &ManagedObject) -> Option<String> {
     (!types.is_empty()).then(|| types.join(" + "))
 }
 
-pub async fn fetch_vhost_core(session: &Session) -> Result<Vec<Vec<Cell>>, String> {
-    let vm_totals = vm_totals_by_host(session).await?;
-    let hosts = session.soap.retrieve("HostSystem", PROPS).await?;
+pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
+    // The per-host VM rollup used to be its own inventory walk. It now reads
+    // the same VM list every other sheet in the fetch shares.
+    let vm_totals = vm_totals_by_host(&snap.vms);
 
-    let mut rows = Vec::with_capacity(hosts.len());
-    for host in hosts {
+    let mut rows = Vec::with_capacity(snap.hosts.len());
+    for host in &snap.hosts {
         let Some(name) = host.str_prop("name") else {
             return Err(format!("HostSystem {} returned no name property", host.moref));
         };
@@ -223,9 +229,9 @@ pub async fn fetch_vhost_core(session: &Session) -> Result<Vec<Vec<Cell>>, Strin
             Cell::opt_num(host.i64_prop("summary.hardware.numCpuThreads").map(|v| v as f64)),
             Cell::opt_num(cpu_usage_pct),
             Cell::opt_num(memory_bytes.map(bytes_to_gib)),
-            Cell::opt_text(memory_tiering_type(&host)),
-            Cell::opt_num(memory_tier_bytes(&host, "DRAM").map(bytes_to_gib)),
-            Cell::opt_num(memory_tier_bytes(&host, "NVMe").map(bytes_to_gib)),
+            Cell::opt_text(memory_tiering_type(host)),
+            Cell::opt_num(memory_tier_bytes(host, "DRAM").map(bytes_to_gib)),
+            Cell::opt_num(memory_tier_bytes(host, "NVMe").map(bytes_to_gib)),
             Cell::opt_num(memory_usage_pct),
             Cell::opt_num(host.i64_prop("summary.hardware.numNics").map(|v| v as f64)),
             Cell::opt_num(host.i64_prop("summary.hardware.numHBAs").map(|v| v as f64)),
@@ -244,18 +250,18 @@ pub async fn fetch_vhost_core(session: &Session) -> Result<Vec<Vec<Cell>>, Strin
             Cell::opt_text(host.str_prop("hardware.cpuPowerManagementInfo.currentPolicy")),
             Cell::opt_text(host.str_prop("config.product.fullName")),
             Cell::opt_text(host.str_prop("runtime.bootTime")),
-            Cell::opt_text(string_array(&host, "config.network.dnsConfig.address")),
+            Cell::opt_text(string_array(host, "config.network.dnsConfig.address")),
             Cell::opt_bool(host.bool_prop("config.network.dnsConfig.dhcp")),
             Cell::opt_text(host.str_prop("config.network.dnsConfig.domainName")),
-            Cell::opt_text(string_array(&host, "config.network.dnsConfig.searchDomain")),
-            Cell::opt_text(string_array(&host, "config.dateTimeInfo.ntpConfig.server")),
-            Cell::opt_bool(service_running(&host, "ntpd")),
+            Cell::opt_text(string_array(host, "config.network.dnsConfig.searchDomain")),
+            Cell::opt_text(string_array(host, "config.dateTimeInfo.ntpConfig.server")),
+            Cell::opt_bool(service_running(host, "ntpd")),
             Cell::opt_text(host.str_prop("config.dateTimeInfo.timeZone.name")),
             Cell::opt_num(host.i64_prop("config.dateTimeInfo.timeZone.gmtOffset").map(|v| v as f64)),
             Cell::opt_text(host.str_prop("summary.hardware.vendor")),
             Cell::opt_text(host.str_prop("summary.hardware.model")),
             Cell::opt_text(host.str_prop("hardware.systemInfo.serialNumber")),
-            Cell::opt_text(identifying_info(&host, "ServiceTag")),
+            Cell::opt_text(identifying_info(host, "ServiceTag")),
             Cell::opt_text(host.str_prop("hardware.biosInfo.biosVersion")),
             Cell::opt_text(host.str_prop("hardware.biosInfo.releaseDate")),
             Cell::opt_text(host.str_prop("summary.hardware.uuid")),
@@ -265,22 +271,113 @@ pub async fn fetch_vhost_core(session: &Session) -> Result<Vec<Vec<Cell>>, Strin
     Ok(rows)
 }
 
+pub const SPEC: SheetSpec = SheetSpec {
+    name: "vHost",
+    columns,
+    // vHost is host-derived, but its `# VMs` / `# vCPUs` / `vRAM` columns are a
+    // rollup over VMs, so it declares both sets.
+    vm_props: &[VM_TOTALS_PROPS],
+    host_props: &[HOST_PROPS],
+    rows,
+};
+
 pub async fn fetch_vhost_all(
     conns: &[VCenterConnection],
     cache: &crate::vcenter::SessionCache,
 ) -> Table {
-    let mut table = Table::new("vHost", columns()).with_source_column();
+    super::snapshot::fetch_table(&SPEC, conns, cache).await
+}
 
-    for conn in conns {
-        let label = conn.label();
-        match cache.get(conn).await {
-            Ok(session) => match fetch_vhost_core(&session).await {
-                Ok(rows) => table.extend_from(&label, rows),
-                Err(e) => table.warnings.push(format!("{label}: {e}")),
-            },
-            Err(e) => table.warnings.push(format!("{label}: {e}")),
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::snapshot::test_support::{col, host, vm};
+
+    fn cell(rows: &[Vec<Cell>], row: usize, label: &str) -> Cell {
+        rows[row][col(&columns(), label)].clone()
     }
 
-    table
+    /// vHost's VM columns used to cost their own inventory walk. They now read
+    /// the same VM list every other sheet in the fetch shares, so this asserts
+    /// the rollup still lands on the right host.
+    #[test]
+    fn vm_columns_roll_up_from_the_shared_snapshot() {
+        let snap = InventorySnapshot::from_parts(
+            vec![
+                vm(
+                    "vm-1",
+                    &[
+                        ("name", "OPS91"),
+                        ("runtime.host", "host-1"),
+                        ("runtime.powerState", "poweredOn"),
+                        ("config.hardware.numCPU", "4"),
+                        ("config.hardware.memoryMB", "8192"),
+                    ],
+                ),
+                vm(
+                    "vm-2",
+                    &[
+                        ("name", "OPS92"),
+                        ("runtime.host", "host-1"),
+                        ("runtime.powerState", "poweredOff"),
+                        ("config.hardware.numCPU", "2"),
+                        ("config.hardware.memoryMB", "4096"),
+                    ],
+                ),
+                // Registered elsewhere: must not count against host-1.
+                vm(
+                    "vm-3",
+                    &[
+                        ("name", "OTHER"),
+                        ("runtime.host", "host-2"),
+                        ("runtime.powerState", "poweredOn"),
+                        ("config.hardware.numCPU", "8"),
+                        ("config.hardware.memoryMB", "16384"),
+                    ],
+                ),
+            ],
+            vec![host(
+                "host-1",
+                &[("name", "esx9-01.example.com"), ("summary.hardware.numCpuCores", "6")],
+            )],
+        );
+
+        let rows = rows(&snap).expect("rows build");
+        assert_eq!(rows.len(), 1);
+        assert!(matches!(cell(&rows, 0, "# VMs total"), Cell::Number(v) if v == 2.0));
+        assert!(matches!(cell(&rows, 0, "# VMs"), Cell::Number(v) if v == 1.0));
+        assert!(matches!(cell(&rows, 0, "# vCPUs"), Cell::Number(v) if v == 6.0));
+        // 8192 + 4096 MiB = 12 GiB.
+        assert!(matches!(cell(&rows, 0, "vRAM GiB"), Cell::Number(v) if v == 12.0));
+        // 6 vCPUs over 6 physical cores.
+        assert!(matches!(cell(&rows, 0, "vCPUs per Core"), Cell::Number(v) if v == 1.0));
+    }
+
+    /// vCLS VMs are vSphere-managed; vSphere's own count excludes them, so the
+    /// rollup must too.
+    #[test]
+    fn vcls_vms_do_not_count_against_a_host() {
+        let snap = InventorySnapshot::from_parts(
+            vec![vm(
+                "vm-1",
+                &[
+                    ("name", "vCLS-4f2e"),
+                    ("runtime.host", "host-1"),
+                    ("runtime.powerState", "poweredOn"),
+                    ("config.hardware.numCPU", "1"),
+                ],
+            )],
+            vec![host("host-1", &[("name", "esx9-01.example.com")])],
+        );
+
+        let rows = rows(&snap).expect("rows build");
+        assert!(matches!(cell(&rows, 0, "# VMs total"), Cell::Number(v) if v == 0.0));
+    }
+
+    #[test]
+    fn a_host_without_a_name_is_an_error() {
+        let snap = InventorySnapshot::from_parts(Vec::new(), vec![host("host-9", &[])]);
+        let err = rows(&snap).expect_err("a nameless host is reported");
+        assert!(err.contains("host-9"), "the error names the object: {err}");
+    }
 }

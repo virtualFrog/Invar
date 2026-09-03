@@ -3,12 +3,13 @@
 //! Every property below was read off the live vCenter before this file was
 //! written; see `docs/VCENTER-PROPERTY-REFERENCE.md`.
 
-use super::common::{bytes_to_gib, host_names, percent};
+use super::common::{bytes_to_gib, percent};
+use super::snapshot::{InventorySnapshot, SheetSpec};
 use super::{Cell, Column, Table};
-use crate::vcenter::{Session, VCenterConnection};
+use crate::vcenter::VCenterConnection;
 
-/// Properties fetched in a single `RetrievePropertiesEx` call.
-const PROPS: &[&str] = &[
+/// `VirtualMachine` properties this sheet reads.
+pub const VM_PROPS: &[&str] = &[
     "name",
     "config.template",
     "runtime.powerState",
@@ -71,14 +72,14 @@ pub fn columns() -> Vec<Column> {
     ]
 }
 
-/// Fetch vInfo rows from one vCenter. Framework-free by design: the Tauri
-/// command is a thin wrapper, so a web-server binary can call this untouched.
-pub async fn fetch_vinfo_core(session: &Session) -> Result<Vec<Vec<Cell>>, String> {
-    let hosts = host_names(session).await?;
-    let vms = session.soap.retrieve("VirtualMachine", PROPS).await?;
+/// Build vInfo rows from an already-fetched snapshot. Framework-free and
+/// I/O-free by design: the Tauri command is a thin wrapper, so a web-server
+/// binary can call this untouched and a test can call it with captured XML.
+pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
+    let hosts = &snap.host_names;
 
-    let mut rows = Vec::with_capacity(vms.len());
-    for vm in vms {
+    let mut rows = Vec::with_capacity(snap.vms.len());
+    for vm in &snap.vms {
         let Some(name) = vm.str_prop("name") else {
             // Reported rather than dropped: a nameless VM means the query shape
             // is wrong, and silently skipping it would hide that.
@@ -137,6 +138,14 @@ pub async fn fetch_vinfo_core(session: &Session) -> Result<Vec<Vec<Cell>>, Strin
     Ok(rows)
 }
 
+pub const SPEC: SheetSpec = SheetSpec {
+    name: "vInfo",
+    columns,
+    vm_props: &[VM_PROPS],
+    host_props: &[],
+    rows,
+};
+
 /// Aggregate vInfo across every configured vCenter.
 ///
 /// One unreachable server yields a warning, not an empty table.
@@ -144,18 +153,114 @@ pub async fn fetch_vinfo_all(
     conns: &[VCenterConnection],
     cache: &crate::vcenter::SessionCache,
 ) -> Table {
-    let mut table = Table::new("vInfo", columns()).with_source_column();
+    super::snapshot::fetch_table(&SPEC, conns, cache).await
+}
 
-    for conn in conns {
-        let label = conn.label();
-        match cache.get(conn).await {
-            Ok(session) => match fetch_vinfo_core(&session).await {
-                Ok(rows) => table.extend_from(&label, rows),
-                Err(e) => table.warnings.push(format!("{label}: {e}")),
-            },
-            Err(e) => table.warnings.push(format!("{label}: {e}")),
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::data::snapshot::test_support::{col, host, vm};
+
+    fn cell(rows: &[Vec<Cell>], row: usize, label: &str) -> Cell {
+        rows[row][col(&columns(), label)].clone()
     }
 
-    table
+    #[test]
+    fn a_vm_resolves_its_host_through_the_snapshot() {
+        let snap = InventorySnapshot::from_parts(
+            vec![vm("vm-1", &[("name", "OPS91"), ("runtime.host", "host-7")])],
+            vec![host("host-7", &[("name", "esx9-01.example.com")])],
+        );
+
+        let rows = rows(&snap).expect("named VM yields a row");
+        assert_eq!(rows.len(), 1);
+        assert!(matches!(cell(&rows, 0, "VM"), Cell::Text(v) if v == "OPS91"));
+        assert!(
+            matches!(cell(&rows, 0, "Host"), Cell::Text(v) if v == "esx9-01.example.com"),
+            "runtime.host should be resolved to the host name"
+        );
+    }
+
+    /// An unresolvable moref is shown as the moref rather than dropped: losing
+    /// the row would under-report the inventory, which is the worst outcome.
+    #[test]
+    fn an_unknown_host_moref_falls_back_to_the_moref() {
+        let snap = InventorySnapshot::from_parts(
+            vec![vm("vm-1", &[("name", "OPS91"), ("runtime.host", "host-404")])],
+            Vec::new(),
+        );
+        let rows = rows(&snap).expect("row is still produced");
+        assert!(matches!(cell(&rows, 0, "Host"), Cell::Text(v) if v == "host-404"));
+    }
+
+    #[test]
+    fn vcls_vms_are_excluded() {
+        let snap = InventorySnapshot::from_parts(
+            vec![
+                vm("vm-1", &[("name", "vCLS-4f2e")]),
+                vm("vm-2", &[("name", "OPS91")]),
+            ],
+            Vec::new(),
+        );
+        let rows = rows(&snap).expect("rows build");
+        assert_eq!(rows.len(), 1);
+        assert!(matches!(cell(&rows, 0, "VM"), Cell::Text(v) if v == "OPS91"));
+    }
+
+    /// A nameless VM means the query shape is wrong. Skipping it silently would
+    /// hide that, so it is an error.
+    #[test]
+    fn a_vm_without_a_name_is_an_error() {
+        let snap = InventorySnapshot::from_parts(vec![vm("vm-1", &[])], Vec::new());
+        let err = rows(&snap).expect_err("a nameless VM is reported");
+        assert!(err.contains("vm-1"), "the error names the object: {err}");
+    }
+
+    /// A powered-off VM reports no max CPU. 0% would be a lie, so the cell is
+    /// empty instead.
+    #[test]
+    fn a_missing_denominator_leaves_usage_empty() {
+        let snap = InventorySnapshot::from_parts(
+            vec![vm(
+                "vm-1",
+                &[
+                    ("name", "OPS91"),
+                    ("summary.quickStats.overallCpuUsage", "0"),
+                ],
+            )],
+            Vec::new(),
+        );
+        let rows = rows(&snap).expect("rows build");
+        assert!(matches!(cell(&rows, 0, "CPU Usage (%)"), Cell::Empty));
+    }
+
+    /// Provisioned is committed + uncommitted; either one missing means the sum
+    /// is unknown, not zero.
+    #[test]
+    fn provisioned_needs_both_halves() {
+        let both = InventorySnapshot::from_parts(
+            vec![vm(
+                "vm-1",
+                &[
+                    ("name", "OPS91"),
+                    ("summary.storage.committed", "1073741824"),
+                    ("summary.storage.uncommitted", "1073741824"),
+                ],
+            )],
+            Vec::new(),
+        );
+        let built = rows(&both).expect("rows build");
+        assert!(matches!(cell(&built, 0, "Provisioned GiB"), Cell::Number(v) if v == 2.0));
+        assert!(matches!(cell(&built, 0, "In Use GiB"), Cell::Number(v) if v == 1.0));
+
+        let half = InventorySnapshot::from_parts(
+            vec![vm(
+                "vm-1",
+                &[("name", "OPS91"), ("summary.storage.committed", "1073741824")],
+            )],
+            Vec::new(),
+        );
+        let built = rows(&half).expect("rows build");
+        assert!(matches!(cell(&built, 0, "Provisioned GiB"), Cell::Empty));
+    }
 }

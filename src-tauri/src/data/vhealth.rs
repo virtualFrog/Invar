@@ -17,18 +17,21 @@
 //!   distinguishes those VMs from the rest. Guessing a trigger would produce
 //!   findings that are confidently wrong, which is worse than a missing check.
 
+use super::snapshot::{InventorySnapshot, SheetSpec};
 use super::{Cell, Column, Table};
 use crate::vcenter::soap::ManagedObject;
 use crate::vcenter::xml::Element;
-use crate::vcenter::{Session, VCenterConnection};
+use crate::vcenter::VCenterConnection;
 
-const HOST_PROPS: &[&str] = &[
+/// `HostSystem` properties this sheet reads.
+pub const HOST_PROPS: &[&str] = &[
     "name",
     "config.dateTimeInfo.ntpConfig.server",
     "config.service.service",
 ];
 
-const VM_PROPS: &[&str] = &[
+/// `VirtualMachine` properties this sheet reads.
+pub const VM_PROPS: &[&str] = &[
     "name",
     "config.files.vmPathName",
     "config.hardware.device",
@@ -161,38 +164,32 @@ fn vm_findings(vm: &ManagedObject, rows: &mut Vec<Vec<Cell>>) -> Result<(), Stri
 }
 
 /// Hosts first, then VMs — the order RVTools emits its own checks in.
-pub async fn fetch_vhealth_core(session: &Session) -> Result<Vec<Vec<Cell>>, String> {
+pub fn rows(snap: &InventorySnapshot) -> Result<Vec<Vec<Cell>>, String> {
     let mut rows = Vec::new();
 
-    let hosts = session.soap.retrieve("HostSystem", HOST_PROPS).await?;
-    for host in &hosts {
+    for host in &snap.hosts {
         host_findings(host, &mut rows)?;
     }
-
-    let vms = session.soap.retrieve("VirtualMachine", VM_PROPS).await?;
-    for vm in &vms {
+    for vm in &snap.vms {
         vm_findings(vm, &mut rows)?;
     }
 
     Ok(rows)
 }
 
+pub const SPEC: SheetSpec = SheetSpec {
+    name: "vHealth",
+    columns,
+    vm_props: &[VM_PROPS],
+    host_props: &[HOST_PROPS],
+    rows,
+};
+
 pub async fn fetch_vhealth_all(
     conns: &[VCenterConnection],
     cache: &crate::vcenter::SessionCache,
 ) -> Table {
-    let mut table = Table::new("vHealth", columns()).with_source_column();
-    for conn in conns {
-        let label = conn.label();
-        match cache.get(conn).await {
-            Ok(session) => match fetch_vhealth_core(&session).await {
-                Ok(rows) => table.extend_from(&label, rows),
-                Err(e) => table.warnings.push(format!("{label}: {e}")),
-            },
-            Err(e) => table.warnings.push(format!("{label}: {e}")),
-        }
-    }
-    table
+    super::snapshot::fetch_table(&SPEC, conns, cache).await
 }
 
 #[cfg(test)]

@@ -1,16 +1,11 @@
 //! Lookups shared across sheets.
+//!
+//! Everything here is pure: it reads an `InventorySnapshot` that has already
+//! been fetched. Host names used to be their own `retrieve` call; they are now
+//! a field on the snapshot, derived from the hosts it already holds.
 
-use crate::vcenter::Session;
+use crate::vcenter::soap::ManagedObject;
 use std::collections::HashMap;
-
-/// `HostSystem` moref → host name, for resolving `runtime.host` references.
-pub async fn host_names(session: &Session) -> Result<HashMap<String, String>, String> {
-    let hosts = session.soap.retrieve("HostSystem", &["name"]).await?;
-    Ok(hosts
-        .into_iter()
-        .filter_map(|h| h.str_prop("name").map(|n| (h.moref, n)))
-        .collect())
-}
 
 const BYTES_PER_GIB: f64 = 1024.0 * 1024.0 * 1024.0;
 
@@ -36,27 +31,20 @@ pub struct HostVmTotals {
     pub vram_mib: i64,
 }
 
+/// `VirtualMachine` properties behind `vm_totals_by_host`.
+pub const VM_TOTALS_PROPS: &[&str] = &[
+    "name",
+    "runtime.host",
+    "runtime.powerState",
+    "config.hardware.numCPU",
+    "config.hardware.memoryMB",
+];
+
 /// Group VM counts by `HostSystem` moref.
 ///
 /// vCLS VMs are excluded to stay consistent with vInfo and with what the
 /// vSphere UI counts.
-pub async fn vm_totals_by_host(
-    session: &crate::vcenter::Session,
-) -> Result<HashMap<String, HostVmTotals>, String> {
-    let vms = session
-        .soap
-        .retrieve(
-            "VirtualMachine",
-            &[
-                "name",
-                "runtime.host",
-                "runtime.powerState",
-                "config.hardware.numCPU",
-                "config.hardware.memoryMB",
-            ],
-        )
-        .await?;
-
+pub fn vm_totals_by_host(vms: &[ManagedObject]) -> HashMap<String, HostVmTotals> {
     let mut totals: HashMap<String, HostVmTotals> = HashMap::new();
     for vm in vms {
         if vm.str_prop("name").is_some_and(|n| n.starts_with("vCLS-")) {
@@ -73,7 +61,7 @@ pub async fn vm_totals_by_host(
         entry.vcpus += vm.i64_prop("config.hardware.numCPU").unwrap_or(0);
         entry.vram_mib += vm.i64_prop("config.hardware.memoryMB").unwrap_or(0);
     }
-    Ok(totals)
+    totals
 }
 
 /// Ratio to two places, or `None` when the denominator is missing or zero.
@@ -106,7 +94,7 @@ pub const VM_CONTEXT_PROPS: &[&str] = &[
 impl VmContext {
     /// `None` for vCLS VMs, which are vSphere-managed and excluded everywhere.
     pub fn from(
-        vm: &crate::vcenter::soap::ManagedObject,
+        vm: &ManagedObject,
         hosts: &HashMap<String, String>,
     ) -> Result<Option<Self>, String> {
         let Some(name) = vm.str_prop("name") else {
