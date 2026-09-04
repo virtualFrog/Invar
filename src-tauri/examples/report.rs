@@ -2,9 +2,9 @@
 //!
 //!   VC_HOST=… VC_USER=… VC_PASS=… cargo run --example report -- out.html
 
-use sttools_lib::data::topology;
-use sttools_lib::report;
-use sttools_lib::vcenter::{SessionCache, VCenterConnection};
+use invar_lib::data::topology;
+use invar_lib::report;
+use invar_lib::vcenter::{SessionCache, VCenterConnection};
 
 #[tokio::main]
 async fn main() -> Result<(), String> {

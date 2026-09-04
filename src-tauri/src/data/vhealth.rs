@@ -450,7 +450,7 @@ mod captured_tests {
         assert_eq!(snaps.len(), 3, "got {snaps:?}");
         assert!(snaps.iter().any(|(_, n)| n == "vSAN File Service Node (1)"));
         assert_eq!(
-            snaps.iter().filter(|(_, n)| n == "sttools-fixture-01").count(),
+            snaps.iter().filter(|(_, n)| n == "invar-fixture-01").count(),
             2,
             "the nested child must be reported as well as its parent"
         );
@@ -479,14 +479,14 @@ mod nested_capture_tests {
             .iter()
             .filter(|(_, r)| matches!(&r[2], Cell::Text(k) if k == "Snapshot"))
             .filter_map(|(_, r)| match (&r[0], &r[1]) {
-                (Cell::Text(name), Cell::Text(msg)) if name == "sttools-fixture-01" => {
+                (Cell::Text(name), Cell::Text(msg)) if name == "invar-fixture-01" => {
                     Some(msg.clone())
                 }
                 _ => None,
             })
             .collect();
         assert_eq!(found.len(), 2, "parent and child, got {found:?}");
-        assert!(found.iter().any(|m| m.contains("sttools-parent")));
-        assert!(found.iter().any(|m| m.contains("sttools-child")));
+        assert!(found.iter().any(|m| m.contains("invar-parent")));
+        assert!(found.iter().any(|m| m.contains("invar-child")));
     }
 }

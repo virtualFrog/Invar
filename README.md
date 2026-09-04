@@ -1,6 +1,6 @@
 <div align="center">
 
-# STTools
+# Invar
 
 <p>
   A cross-platform infrastructure-assessment tool, built live at the VMware Explore Hackathon.

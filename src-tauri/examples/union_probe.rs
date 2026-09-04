@@ -7,9 +7,9 @@
 //!
 //! Usage: cargo run --example union_probe -- <out.json> <out.xlsx>
 
-use sttools_lib::data;
-use sttools_lib::export;
-use sttools_lib::vcenter::{config, SessionCache};
+use invar_lib::data;
+use invar_lib::export;
+use invar_lib::vcenter::{config, SessionCache};
 
 #[tokio::main]
 async fn main() {
@@ -18,7 +18,7 @@ async fn main() {
     let out_xlsx = args.next().unwrap_or_else(|| "union.xlsx".into());
 
     let dir = std::env::var("APPDATA")
-        .map(|a| std::path::PathBuf::from(a).join("ch.soultec.sttools"))
+        .map(|a| std::path::PathBuf::from(a).join("ch.soultec.invar"))
         .expect("APPDATA must be set");
     let cfg = config::load(&config::config_path(dir)).expect("config loads");
     assert!(!cfg.connections.is_empty(), "no vCenter configured");

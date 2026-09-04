@@ -1,12 +1,12 @@
 [package]
-name = "sttools"
+name = "invar"
 version = "0.1.0"
-description = "STTools - cross-platform vCenter inventory tool"
+description = "Invar, a cross-platform vCenter inventory tool"
 edition = "2021"
-default-run = "sttools"
+default-run = "invar"
 
 [lib]
-name = "sttools_lib"
+name = "invar_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "STTools",
+  "productName": "Invar",
   "version": "0.1.0",
-  "identifier": "ch.soultec.sttools",
+  "identifier": "ch.soultec.invar",
   "build": {
     "frontendDist": "../src"
   },
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "STTools",
+        "title": "Invar",
         "width": 1400,
         "height": 900
       }

@@ -1,6 +1,6 @@
 # RVTools Parity Plan
 
-Goal: bring STTools to feature parity with RVTools.
+Goal: bring Invar to feature parity with RVTools.
 
 This plan is derived from `docs/RVTOOLS-SHEETS-AND-COLUMNS.md` (the column spec),
 read against the code actually in this repo as of the fork. It is a roadmap, not
@@ -17,7 +17,7 @@ is in `docs/parity-roadmap.html`. Open it in a browser.
 
 Six of RVTools' 27 sheets exist, five of them as UI sheets and one export-only.
 
-| Sheet | RVTools cols | STTools cols | State |
+| Sheet | RVTools cols | Invar cols | State |
 |---|---:|---:|---|
 | vInfo | 89 | 25 | Partial |
 | vHost | 70 | 49 | Partial |
@@ -42,7 +42,7 @@ Two things are already at parity and should not be re-litigated:
   one module plus one line in `list_sheets` and one in `fetch_all_tables`
   (`src-tauri/src/lib.rs:52`, `:83`). No UI work per sheet.
 
-STTools is also already **ahead** of RVTools in three places, and none of this is
+Invar is also already **ahead** of RVTools in three places, and none of this is
 parity work: multi-vCenter aggregation in one view, the Insights dashboard, and
 the HTML topology report.
 
@@ -253,7 +253,7 @@ no VM), vNetwork's `Switch` (needs `DistributedVirtualSwitch`, which is Phase 2)
 and vTools' `Required Version` (no observed source property).
 
 **Two shapes the lab could not test were created rather than assumed.** It had
-no nested snapshot and no `VirtualUSB` device, so `sttools-fixture-01` was built
+no nested snapshot and no `VirtualUSB` device, so `invar-fixture-01` was built
 to carry both. That immediately caught a real defect: a `VirtualUSB` reports
 `connected` on the device itself, not inside the `connectable` block that
 CD-ROMs and NICs use, so the first implementation produced an empty cell and no
@@ -294,7 +294,7 @@ vSC_VMK 18.
 **vSwitch and vPort had nothing to parse**, because these hosts run entirely on
 a distributed switch and both properties returned empty arrays. Rather than ship
 two sheets verified only by hand-written XML, an isolated standard switch and
-port group were created on one host (`sttools-vSwitch` / `sttools-pg`, no
+port group were created on one host (`invar-vSwitch` / `invar-pg`, no
 uplinks, see `docs/LAB-ENVIRONMENT.md`). Both sheets now have a real row.
 
 That immediately corrected the port-group reader. A `HostPortGroup` carries
@@ -387,7 +387,7 @@ not are `summary.currentEVCModeKey` (EVC is off, expected) and the serial number
 above.
 
 ESXi hosts were still on 9.1.0.0200 at that point, so host remediation had not
-run and `sttools-vSwitch` survived. That may change when it does.
+run and `invar-vSwitch` survived. That may change when it does.
 
 ### Phase 4: column depth on what already exists
 
@@ -523,13 +523,13 @@ RVTools behaviour that this unlocks and which is still unimplemented.
 
 ### Phase 6: app-level parity
 
-Sheets are not the whole product. RVTools also does these, and STTools does none
+Sheets are not the whole product. RVTools also does these, and Invar does none
 of them:
 
 - **Headless export.** RVTools' `-c ExportAll2xls` is how people schedule it. This
   is also the README's stated Linux-service goal. Needs a second binary; note
   `CLAUDE.md` already records that this breaks `cargo run` under `tauri dev`
-  unless `default-run` is set, which it now is (`sttools`).
+  unless `default-run` is set, which it now is (`invar`).
 - **CSV export** per sheet, alongside xlsx.
 - **Email delivery** of a finished export over SMTP.
 - **Zip and password-protect** the export.

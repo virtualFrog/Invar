@@ -10,9 +10,9 @@
 //!
 //! Usage: cargo run --example parity_probe -- <out.json> <out.xlsx>
 
-use sttools_lib::data::{vdisk, vhealth, vhost, vinfo, vsnapshot};
-use sttools_lib::export;
-use sttools_lib::vcenter::{config, SessionCache};
+use invar_lib::data::{vdisk, vhealth, vhost, vinfo, vsnapshot};
+use invar_lib::export;
+use invar_lib::vcenter::{config, SessionCache};
 
 #[tokio::main]
 async fn main() {
@@ -21,7 +21,7 @@ async fn main() {
     let out_xlsx = args.next().unwrap_or_else(|| "probe.xlsx".into());
 
     let dir = std::env::var("APPDATA")
-        .map(|a| std::path::PathBuf::from(a).join("ch.soultec.sttools"))
+        .map(|a| std::path::PathBuf::from(a).join("ch.soultec.invar"))
         .expect("APPDATA must be set");
     let path = config::config_path(dir);
     let cfg = config::load(&path).expect("config loads");

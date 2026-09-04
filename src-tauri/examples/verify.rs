@@ -5,8 +5,8 @@
 //! Prints row counts and a sample row so results can be compared against what
 //! vCenter itself reports. Never prints credentials.
 
-use sttools_lib::data::{vdisk, vhealth, vhost, vinfo, vsnapshot, Cell, Table};
-use sttools_lib::vcenter::{SessionCache, VCenterConnection};
+use invar_lib::data::{vdisk, vhealth, vhost, vinfo, vsnapshot, Cell, Table};
+use invar_lib::vcenter::{SessionCache, VCenterConnection};
 
 #[tokio::main]
 async fn main() -> Result<(), String> {

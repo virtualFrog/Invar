@@ -4,7 +4,7 @@
 //!
 //! The lab runs entirely on a distributed switch and had **no standard vSwitch
 //! at all**, so this sheet parsed nothing. One was created on a single host
-//! purely so it has something real to read (`sttools-vSwitch`, isolated with no
+//! purely so it has something real to read (`invar-vSwitch`, isolated with no
 //! uplinks — see `docs/LAB-ENVIRONMENT.md`), and the fields below are what a
 //! real `HostVirtualSwitch` returned.
 //!
@@ -162,7 +162,7 @@ mod tests {
     fn one_row_per_standard_switch() {
         let rows = cells(rows(&captured_snapshot()).expect("named host"));
         assert_eq!(rows.len(), 1);
-        assert!(matches!(at(&rows[0], "Switch"), Cell::Text(ref s) if s == "sttools-vSwitch"));
+        assert!(matches!(at(&rows[0], "Switch"), Cell::Text(ref s) if s == "invar-vSwitch"));
     }
 
     /// `numPorts` is the elastic count ESXi allocated, not the 128 requested;

@@ -2,7 +2,7 @@
 
 > **Historical document.** This describes how the original hackathon repo was
 > bootstrapped. Every path and repo name below refers to that original layout;
-> this repo is now **STTools** (a fork of
+> this repo is now **Invar** (a fork of
 > `dalehassinger/VMware-Explore-Hackathon-2026-Live`) and the reference repo
 > `VMware-Explore-Hackathon-2026` is not checked out here. The "Improvements
 > required" list further down is still the live guidance.

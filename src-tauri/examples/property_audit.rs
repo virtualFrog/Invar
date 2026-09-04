@@ -18,8 +18,8 @@
 //! Exit status is non-zero if anything returned for nothing, so it can gate CI.
 
 use std::collections::{BTreeMap, BTreeSet};
-use sttools_lib::data::{self, snapshot::union};
-use sttools_lib::vcenter::{config, SessionCache};
+use invar_lib::data::{self, snapshot::union};
+use invar_lib::vcenter::{config, SessionCache};
 
 /// Which sheets asked for a given property, per object type.
 fn askers(
@@ -45,7 +45,7 @@ fn sets(
 #[tokio::main]
 async fn main() {
     let dir = std::env::var("APPDATA")
-        .map(|a| std::path::PathBuf::from(a).join("ch.soultec.sttools"))
+        .map(|a| std::path::PathBuf::from(a).join("ch.soultec.invar"))
         .expect("APPDATA must be set");
     let cfg = config::load(&config::config_path(dir)).expect("config loads");
     let conn = cfg.connections.first().expect("a configured vCenter").clone();

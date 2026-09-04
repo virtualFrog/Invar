@@ -1,6 +1,6 @@
 # Running on Windows
 
-How to build and run the STTools app on Windows 10/11, from a clean
+How to build and run the Invar app on Windows 10/11, from a clean
 machine to a shipped installer.
 
 > **Testing status.** The app is developed on macOS. The two platform-specific
@@ -85,11 +85,11 @@ rustup default stable-x86_64-pc-windows-msvc
 ## 2. Get the code
 
 ```powershell
-git clone https://github.com/virtualFrog/STTools.git
+git clone https://github.com/virtualFrog/Invar.git
 ```
 
 ```powershell
-cd STTools
+cd Invar
 ```
 
 ```powershell
@@ -120,15 +120,15 @@ add a host, username and password, then **Save** — it queries immediately.
 Settings are stored here:
 
 ```
-%APPDATA%\ch.soultec.sttools\config.json
+%APPDATA%\ch.soultec.invar\config.json
 ```
 
-which expands to `C:\Users\<you>\AppData\Roaming\ch.soultec.sttools\`.
+which expands to `C:\Users\<you>\AppData\Roaming\ch.soultec.invar\`.
 
 Open the folder with:
 
 ```powershell
-explorer "$env:APPDATA\ch.soultec.sttools"
+explorer "$env:APPDATA\ch.soultec.invar"
 ```
 
 The file holds a **list** of connections — add as many vCenters as you like and
@@ -173,9 +173,9 @@ src-tauri\target\release\bundle\nsis\
 ```
 
 The files are named from the product name and version in `tauri.conf.json` —
-currently *STTools* 0.1.0, so expect something close to
-`STTools_0.1.0_x64_en-US.msi` and
-`STTools_0.1.0_x64-setup.exe`.
+currently *Invar* 0.1.0, so expect something close to
+`Invar_0.1.0_x64_en-US.msi` and
+`Invar_0.1.0_x64-setup.exe`.
 
 Both are produced because `tauri.conf.json` sets `"targets": "all"`. The MSI is
 better for Group Policy or Intune deployment; the NSIS `-setup.exe` is the
@@ -320,4 +320,4 @@ with CRLF. Nothing in the build cares.
 | Unit tests | `cargo test` | `src-tauri\` |
 | One sheet, no UI | `cargo run --example verify vHost` | `src-tauri\` |
 | Full xlsx export | `cargo run --example export -- C:\Temp\out.xlsx` | `src-tauri\` |
-| Config file | `explorer "$env:APPDATA\ch.soultec.sttools"` | anywhere |
+| Config file | `explorer "$env:APPDATA\ch.soultec.invar"` | anywhere |

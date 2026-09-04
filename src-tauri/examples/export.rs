@@ -2,9 +2,9 @@
 //!
 //!   VC_HOST=… VC_USER=… VC_PASS=… cargo run --example export -- /path/out.xlsx
 
-use sttools_lib::data::{vdisk, vhealth, vhost, vinfo, vsnapshot};
-use sttools_lib::export;
-use sttools_lib::vcenter::{SessionCache, VCenterConnection};
+use invar_lib::data::{vdisk, vhealth, vhost, vinfo, vsnapshot};
+use invar_lib::export;
+use invar_lib::vcenter::{SessionCache, VCenterConnection};
 
 #[tokio::main]
 async fn main() -> Result<(), String> {

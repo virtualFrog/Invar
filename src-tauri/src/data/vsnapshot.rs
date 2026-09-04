@@ -281,15 +281,15 @@ mod nested_capture_tests {
         let name_col = col(&columns(), "Name");
         let mine: Vec<String> = rows
             .iter()
-            .filter(|r| matches!(&r[vm_col], Cell::Text(n) if n == "sttools-fixture-01"))
+            .filter(|r| matches!(&r[vm_col], Cell::Text(n) if n == "invar-fixture-01"))
             .filter_map(|r| match &r[name_col] {
                 Cell::Text(s) => Some(s.clone()),
                 _ => None,
             })
             .collect();
         assert_eq!(mine.len(), 2, "parent and child, got {mine:?}");
-        assert!(mine.contains(&"sttools-parent".to_string()));
-        assert!(mine.contains(&"sttools-child".to_string()));
+        assert!(mine.contains(&"invar-parent".to_string()));
+        assert!(mine.contains(&"invar-child".to_string()));
     }
 
     /// Depth-first: a child is emitted immediately after its parent, not
@@ -305,8 +305,8 @@ mod nested_capture_tests {
                 _ => None,
             })
             .collect();
-        let p = names.iter().position(|n| n == "sttools-parent").expect("parent row");
-        let c = names.iter().position(|n| n == "sttools-child").expect("child row");
+        let p = names.iter().position(|n| n == "invar-parent").expect("parent row");
+        let c = names.iter().position(|n| n == "invar-child").expect("child row");
         assert_eq!(c, p + 1, "child should directly follow its parent: {names:?}");
     }
 }

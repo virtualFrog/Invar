@@ -1,10 +1,19 @@
 # Lab Environment
 
-The vCenter STTools is developed and verified against. Point the app here.
+The vCenter Invar is developed and verified against. Point the app here.
 
 Documented 2026-09-03, from live queries against the environment itself. Counts
 drift as the lab changes — see [Inventory volatility](#inventory-volatility),
 which matters more here than in a typical lab.
+
+> **Renamed 2026-09-04, and not yet applied to the lab.** When the tool was
+> renamed from STTools to Invar, the purpose-built lab objects were renamed with
+> it *in this repo only*: `invar-fixture-01`, its `invar-parent` /
+> `invar-child` snapshots, `invar-vSwitch` and `invar-pg`. In the live vCenter
+> they are still named `sttools-*`, so the names below and the captured XML in
+> `src-tauri/src/data/fixtures/` will not match what a fresh query returns until
+> someone renames them in vCenter and re-captures the fixtures. Nothing in the
+> product depends on these names; only the fixture-backed tests do.
 
 > **This repo is public.** The vCenter password is deliberately kept out of git.
 > It lives in `LAB-CREDENTIALS.local.md` at the repo root, which is gitignored
@@ -124,12 +133,12 @@ All three have NTP configured (`10.24.0.10`) and `ntpd` running, so they produce
 Essentially everything lives on the vSAN datastore. That single fact drives the
 biggest surprise in the vHealth sheet, below.
 
-### `sttools-fixture-01` — a VM created for testing
+### `invar-fixture-01` — a VM created for testing
 
 This VM exists only to give the test corpus two shapes the lab otherwise lacked.
 It is powered off, has no disk and no NIC, and carries:
 
-- a **nested snapshot**: `sttools-parent` with `sttools-child` beneath it, which
+- a **nested snapshot**: `invar-parent` with `invar-child` beneath it, which
   is the `childSnapshotList` shape vSnapshot and vHealth flatten;
 - a **`VirtualUSB` device** on a USB controller, which is what vUSB parses.
 
@@ -170,7 +179,7 @@ list before "fixing" an empty column.**
 | vNetwork | `Network` | 178/234 | 56 NICs use `VirtualEthernetCardLegacyNetworkBackingInfo`, whose `deviceName` comes back empty. Their VMs do report `guest.net`, but the guest names none of those NICs either, so no source supplies a name. |
 | vNetwork | `IPv4 Address` | 97/234 | Comes from `guest.net`, which needs VMware Tools. |
 | vMemory | `Overhead` | column absent | `runtime.memoryOverhead` was returned for **no** VM, so the column is not implemented rather than shipped always-empty. |
-| vUSB | all | 1 row | Only `sttools-fixture-01` has a `VirtualUSB` device; the lab's other USB entries are *controllers*, which are not devices and are deliberately not rows. |
+| vUSB | all | 1 row | Only `invar-fixture-01` has a `VirtualUSB` device; the lab's other USB entries are *controllers*, which are not devices and are deliberately not rows. |
 
 ### Host networking is distributed, plus one switch built for testing
 
@@ -179,14 +188,14 @@ Production networking here is entirely distributed: one switch,
 vSwitch or port group at all, so RVTools' `vSwitch` and `vPort` sheets parsed
 nothing.
 
-`sttools-vSwitch` and its port group `sttools-pg` (VLAN 101) were created on
+`invar-vSwitch` and its port group `invar-pg` (VLAN 101) were created on
 **esx01 only** to fix that. The switch is **isolated — no physical NIC is
 attached** — so it carries no traffic and cannot affect existing networking.
 Both sheets now have one real row each.
 
 To remove them, on `networkSystem-12`:
-`RemovePortGroup(pgName="sttools-pg")` then
-`RemoveVirtualSwitch(vswitchName="sttools-vSwitch")`. Doing so returns vSwitch
+`RemovePortGroup(pgName="invar-pg")` then
+`RemoveVirtualSwitch(vswitchName="invar-vSwitch")`. Doing so returns vSwitch
 and vPort to zero rows.
 
 Two things the real switch taught, both now in the code:
@@ -194,7 +203,7 @@ Two things the real switch taught, both now in the code:
 - `numPorts` is the **elastic** count ESXi allocated (9216), not the 128 that
   was requested; the request survives separately under `spec/numPorts`.
 - A port group's effective settings are in `computedPolicy`, not `spec/policy`.
-  `sttools-pg` sets only security and inherits teaming from the switch, so
+  `invar-pg` sets only security and inherits teaming from the switch, so
   `spec/policy` has no `nicTeaming` at all and reading it would have left the
   `Policy` column empty.
 
@@ -299,8 +308,8 @@ The repo's older `verify`, `export` and `concurrent` examples take `VC_HOST` /
 
 ## Security: storing the password
 
-`config.json` lives at `%APPDATA%\ch.soultec.sttools\config.json` on Windows and
-`~/Library/Application Support/ch.soultec.sttools/config.json` on macOS. **It
+`config.json` lives at `%APPDATA%\ch.soultec.invar\config.json` on Windows and
+`~/Library/Application Support/ch.soultec.invar/config.json` on macOS. **It
 stores the vCenter password in cleartext.**
 
 `config::restrict_permissions` chmods it to `0600` — but only on Unix. The

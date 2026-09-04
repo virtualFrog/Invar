@@ -9,7 +9,7 @@
 //!
 //! The lab is otherwise entirely distributed-switched, so a standard switch and
 //! port group were created on one host purely so this sheet has something real
-//! to parse (`sttools-vSwitch` / `sttools-pg`, see `docs/LAB-ENVIRONMENT.md`).
+//! to parse (`invar-vSwitch` / `invar-pg`, see `docs/LAB-ENVIRONMENT.md`).
 //! Distributed port groups are a different sheet, `dvPort`.
 
 use super::hostnet::HOST_NET_PROPS;
@@ -133,8 +133,8 @@ mod tests {
         let rows = cells(rows(&captured_snapshot()).expect("named host"));
         assert_eq!(rows.len(), 1);
         let r = &rows[0];
-        assert!(matches!(at(r, "Port Group"), Cell::Text(ref s) if s == "sttools-pg"));
-        assert!(matches!(at(r, "Switch"), Cell::Text(ref s) if s == "sttools-vSwitch"));
+        assert!(matches!(at(r, "Port Group"), Cell::Text(ref s) if s == "invar-pg"));
+        assert!(matches!(at(r, "Switch"), Cell::Text(ref s) if s == "invar-vSwitch"));
         assert!(matches!(at(r, "VLAN"), Cell::Number(n) if n == 101.0));
     }
 

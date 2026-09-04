@@ -9,7 +9,7 @@
 //!
 //! The lab originally had controllers but no `VirtualUSB` at all, so this sheet
 //! had nothing to parse. A VM carrying one was created for the purpose
-//! (`sttools-fixture-01`, see `docs/LAB-ENVIRONMENT.md`), and the columns below
+//! (`invar-fixture-01`, see `docs/LAB-ENVIRONMENT.md`), and the columns below
 //! are what a real device actually returned.
 //!
 //! RVTools' `Family`, `Speed`, `EHCI enabled` and `Auto connect` are still
@@ -127,7 +127,7 @@ mod tests {
         let rows = cells(rows(&captured_snapshot()).expect("named VMs"));
         assert_eq!(rows.len(), 1);
         let at = |l: &str| rows[0][col(&columns(), l)].clone();
-        assert!(matches!(at("VM"), Cell::Text(ref s) if s == "sttools-fixture-01"));
+        assert!(matches!(at("VM"), Cell::Text(ref s) if s == "invar-fixture-01"));
         assert!(matches!(at("Device Node"), Cell::Text(ref s) if s.starts_with("USB")));
         assert!(
             matches!(at("Device Type"), Cell::Text(ref s) if s == "VirtualUSBRemoteHostBackingInfo")
@@ -143,7 +143,7 @@ mod tests {
         let vm = snap
             .vms
             .iter()
-            .find(|v| v.str_prop("name").as_deref() == Some("sttools-fixture-01"))
+            .find(|v| v.str_prop("name").as_deref() == Some("invar-fixture-01"))
             .expect("fixture VM present");
         let types: Vec<_> = vm
             .array_prop("config.hardware.device")
