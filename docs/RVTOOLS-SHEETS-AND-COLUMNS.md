@@ -709,13 +709,24 @@ Name, Key, Labels, Cost Unit, Total, Used, Expiration Date, Features
 
 ### vFileInfo
 
-> **Not implemented.** Needs HostDatastoreBrowser + SearchDatastoreSubFolders (datastore file-tree walking)
+> **Not implemented in the reference.** Needs HostDatastoreBrowser +
+> SearchDatastoreSubFolders (datastore file-tree walking). Invar implements it
+> (`src/data/vfileinfo.rs`, landed 2026-09-03).
 
 **RVTools columns:**
 
 ```
 Friendly Path Name, File Name, File Type, File Size in bytes, Path
 ```
+
+**Invar diverges here, deliberately.** It adds a `Modification` column between
+`File Size in bytes` and `Path`, because the search already asks for
+`modification` and a file listing without a timestamp answers half the question
+anyone opens it for. This is the one sheet where a column exists that RVTools
+does not have, so a consumer reading this sheet **by column index** will be one
+off from `Path` onward. Read by label. RVTools also carries an `Internal Sort
+Column` here that is an implementation detail of its own grid; Invar has no
+equivalent and does not fake one.
 
 
 
