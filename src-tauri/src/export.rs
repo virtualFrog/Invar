@@ -174,7 +174,7 @@ fn write_sheet(sheet: &mut Worksheet, table: &Table, f: &Formats) -> Result<(), 
                 }
                 Cell::Text(s) => match (&formats[c], parse_timestamp(s)) {
                     (ColumnFormat::Date, Some(dt)) => sheet
-                        .write_datetime_with_format(excel_row, col, &dt, &f.date)
+                        .write_datetime_with_format(excel_row, col, dt, &f.date)
                         .map_err(err)
                         .map(|_| ())?,
                     _ => sheet

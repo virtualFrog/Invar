@@ -1,0 +1,200 @@
+name: Release
+
+# Tagging is the trigger. `tauri build` only ever builds for the platform it
+# runs on, so a Windows .msi or a Linux .deb cannot be produced on a Mac: the
+# only way this project ships all three is a matrix here.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (must already exist)"
+        required: true
+
+jobs:
+  create-release:
+    name: Create draft release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.create.outputs.result }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create the draft
+        id: create
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = "${{ steps.version.outputs.version }}";
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: `v${version}`,
+              name: `Invar ${version}`,
+              body: [
+                "Desktop builds for macOS, Windows and Linux, plus `invar-export`,",
+                "the headless exporter for scheduled collection.",
+                "",
+                "See the README for install notes and for how passwords are stored.",
+              ].join("\n"),
+              draft: true,
+              prerelease: false,
+            });
+            return data.id;
+
+  build:
+    name: Build (${{ matrix.label }})
+    needs: create-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One universal .dmg rather than two architecture-specific ones:
+          # an Intel Mac owner should not have to work out which file is theirs.
+          - os: macos-latest
+            label: macOS (universal)
+            target: universal-apple-darwin
+            args: --target universal-apple-darwin
+          # Built on the oldest supported Ubuntu on purpose. The glibc and
+          # webkit2gtk a binary links against here set the floor for every
+          # distribution it will run on; building on `latest` quietly raises it.
+          - os: ubuntu-22.04
+            label: Linux (x86_64)
+            target: x86_64-unknown-linux-gnu
+            args: ""
+          - os: windows-latest
+            label: Windows (x86_64)
+            target: x86_64-pc-windows-msvc
+            args: ""
+
+    runs-on: ${{ matrix.os }}
+    # Declared at job level, not on the step that uses them: a step-level `env`
+    # is not visible to that step's own `if`, and the signing step has to be
+    # able to skip itself when no certificate is configured.
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libayatana-appindicator3-dev \
+            libxdo-dev \
+            patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      # This has to happen BEFORE the bundle step, and it is not optional on
+      # macOS. The bundler copies every binary in the package into the .app, but
+      # its universal handling only lipos the *main* one. Left to itself,
+      # `--target universal-apple-darwin` fails with
+      #   Failed to copy binary from ".../universal-apple-darwin/release/invar-export"
+      # so the fat binary is assembled into that directory first. On the other
+      # platforms cargo has already put it where the bundler looks.
+      - name: Build the headless exporter
+        working-directory: src-tauri
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            cargo build --release --bin invar-export --target aarch64-apple-darwin
+            cargo build --release --bin invar-export --target x86_64-apple-darwin
+            mkdir -p target/universal-apple-darwin/release
+            lipo -create -output target/universal-apple-darwin/release/invar-export \
+              target/aarch64-apple-darwin/release/invar-export \
+              target/x86_64-apple-darwin/release/invar-export
+          else
+            cargo build --release --bin invar-export
+          fi
+
+      - name: Build and bundle
+        uses: tauri-apps/tauri-action@v0
+        # The Apple signing and notarization variables come from the job `env`
+        # above. Without them the build still succeeds, but the .dmg is only
+        # ad-hoc signed and Gatekeeper tells anyone who downloads it that the
+        # app "is damaged".
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }}
+
+      # tauri-action signs what it bundles; this binary is not in the bundle,
+      # so it is signed here with the same identity or not at all.
+      # The copy inside the .app is signed by tauri-action along with the
+      # bundle. This signs the standalone copy that is attached to the release.
+      - name: Sign the headless exporter
+        if: matrix.os == 'macos-latest' && env.APPLE_SIGNING_IDENTITY != ''
+        working-directory: src-tauri
+        run: |
+          codesign --force --options runtime --timestamp \
+            --sign "$APPLE_SIGNING_IDENTITY" \
+            target/universal-apple-darwin/release/invar-export
+          codesign --verify --verbose target/universal-apple-darwin/release/invar-export
+
+      - name: Attach the headless exporter
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          cd src-tauri
+          case "${{ matrix.os }}" in
+            macos-latest)   NAME="invar-export-${VERSION}-macos-universal" ; SRC="target/universal-apple-darwin/release/invar-export" ;;
+            ubuntu-22.04)   NAME="invar-export-${VERSION}-linux-x86_64"    ; SRC="target/release/invar-export" ;;
+            windows-latest) NAME="invar-export-${VERSION}-windows-x86_64.exe" ; SRC="target/release/invar-export.exe" ;;
+          esac
+          cp "$SRC" "$NAME"
+          gh release upload "v${VERSION}" "$NAME" --clobber
+
+  publish:
+    name: Publish the release
+    needs: [create-release, build]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ needs.create-release.outputs.release_id }},
+              draft: false,
+            });

@@ -59,7 +59,7 @@ pub fn columns() -> Vec<Column> {
 }
 
 /// `ScsiLun` key → the device, so a path can name what it leads to.
-fn luns_by_key<'a>(host: &'a ManagedObject) -> HashMap<String, &'a Element> {
+fn luns_by_key(host: &ManagedObject) -> HashMap<String, &Element> {
     host.array_prop("config.storageDevice.scsiLun")
         .into_iter()
         .filter_map(|l| Some((l.text_at("key")?, l)))

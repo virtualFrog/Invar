@@ -3,7 +3,24 @@ name = "invar"
 version = "0.1.0"
 description = "Invar, a cross-platform vCenter inventory tool"
 edition = "2021"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/virtualFrog/Invar"
+readme = "../README.md"
+rust-version = "1.88"
 default-run = "invar"
+
+# Two clippy lints are allowed deliberately, so CI can gate on `-D warnings`
+# for everything else:
+#
+# - `too_many_arguments`: `InventorySnapshot::fetch` takes one property list per
+#   managed-object type. Bundling them into a struct would hide which types a
+#   fetch covers, which is the one thing that has to stay obvious.
+# - `type_complexity`: `SheetSpec::rows` is a plain fn pointer with the sheet
+#   contract in its signature. A type alias would move that contract away from
+#   the place people read it.
+[lints.clippy]
+too_many_arguments = "allow"
+type_complexity = "allow"
 
 [lib]
 name = "invar_lib"

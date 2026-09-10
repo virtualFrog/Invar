@@ -342,11 +342,9 @@ impl SoapClient {
         let mut out = Vec::new();
         let mut page = self.call(&body).await?;
 
-        loop {
-            let returnval = match page.find("returnval") {
-                Some(r) => r,
-                None => break, // no matching objects at all
-            };
+        // `while let` rather than `loop` + `match`: a page with no `returnval`
+        // means no matching objects at all, which ends the walk.
+        while let Some(returnval) = page.find("returnval") {
             for obj in returnval.children_named("objects") {
                 out.push(ManagedObject::from_element(obj));
             }

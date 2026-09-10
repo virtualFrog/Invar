@@ -22,12 +22,26 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "Utility",
+    "publisher": "soulTec AG",
+    "copyright": "Copyright (C) 2026 soulTec AG. Licensed under the GNU GPL v3 or later.",
+    "licenseFile": "../LICENSE",
+    "shortDescription": "Cross-platform vCenter inventory",
+    "longDescription": "Invar reads VMware vCenter inventory and presents it as sortable tables, one per object type, and exports it to a multi-sheet workbook or to CSV using RVTools' sheet and column names. It runs on macOS, Windows and Linux, and ships a headless exporter for scheduled collection.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      }
+    }
   }
 }
