@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Invar app mark: a key column and its records.
+
+  Why this shape. The previous icon was a blue shield over circuit traces with
+  the letters "VM" inside it: a security metaphor for a tool that does no
+  security, and detail that turned to mush below 64px. An app icon is read at
+  16px in a sidebar far more often than at 512px in a dock, so this one is built
+  from four blocks and two tones and nothing else.
+
+  The vertical accent bar is the key column of a table, and doubles as the I of
+  Invar. The three blocks beside it are records, the last one short, because
+  real inventory is ragged. Colours are the app's own surface and accent
+  (styles.css), not a vendor blue.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#24282c"/>
+      <stop offset="1" stop-color="#15171a"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#tile)"/>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="none" stroke="#343a3f" stroke-width="4"/>
+
+  <rect x="252" y="298" width="132" height="428" rx="40" fill="#4fb3a5"/>
+  <rect x="432" y="298" width="340" height="132" rx="40" fill="#7c868d"/>
+  <rect x="432" y="470" width="340" height="132" rx="40" fill="#525c63"/>
+  <rect x="432" y="642" width="216" height="84"  rx="34" fill="#3d454a"/>
+</svg>
