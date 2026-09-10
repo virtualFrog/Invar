@@ -313,7 +313,26 @@ Two Cargo examples exist specifically for checking the app against this lab:
 ```bash
 cargo run --example parity_probe -- out.json out.xlsx   # five per-sheet fetchers
 cargo run --example union_probe  -- out.json out.xlsx   # shared-snapshot path
+cargo run --example session_audit                       # open vCenter sessions
 ```
+
+### This lab carries ~510 open sessions, and almost none are ours
+
+`session_audit` reported **512 open sessions** on 2026-09-10, of which **3**
+belonged to `administrator@vsphere.local` and the rest to VCF's own service
+accounts (`wcp-storage-user-*`, `svc-vcfsp-vc-*`, `ssp-op-*`), many logged in
+for **six days or more**. A large total here is normal and is not evidence of a
+leak — read the "as \<user\>" figure, not the total.
+
+Two quirks worth knowing before you trust a number from this sheet:
+
+- **`lastActiveTime` is unreliable.** 419 of those 512 sessions returned it
+  equal to `loginTime`, which makes their "idle" time a copy of their age. The
+  audit measures the proportion per run and suppresses idle entirely when
+  nothing contradicts it. Do not conclude a session is idle from this field
+  alone.
+- **One connection can be several rows.** A REST login produces an extra
+  server-side `vapi-endpoint` session from `127.0.0.1`.
 
 Both read the app's own `config.json`, dump every table as JSON for diffing, and
 write a real xlsx. `parity_probe` uses only function signatures that are

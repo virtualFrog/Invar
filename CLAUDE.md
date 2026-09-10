@@ -201,8 +201,21 @@ version of this app accumulated ~300 open sessions in a day of testing.
 - Clean up on shutdown, handling **both SIGINT and SIGTERM** — `systemctl
   stop/restart` sends SIGTERM, so Ctrl-C-only handling leaks on every restart.
 
-Check open sessions with `RetrievePropertiesEx` on `SessionManager` /
-`sessionList` and count `<UserSession` elements.
+`cargo run --example session_audit` does this — `RetrievePropertiesEx` on
+`SessionManager` / `sessionList`, counting the `<UserSession>` elements and
+separating the ones belonging to the configured user from everyone else's. Use
+it as a bracket: audit, run the thing you suspect, audit again. `--all` lists
+every session, `--max <n>` makes it exit non-zero so a check can gate on it.
+
+Verified 2026-09-10: **the cache works.** Eight consecutive `invar-export` runs
+left the count unchanged, so each process logs out cleanly.
+
+Two things that make the count harder to read than it sounds:
+
+- The app sets **no user agent**, so its sessions are indistinguishable from any
+  other client logged in as the same user. Attribution is by username only.
+- A REST login also creates a server-side `vapi-endpoint` session from
+  `127.0.0.1`, so one connection can appear as more than one row.
 
 ---
 
