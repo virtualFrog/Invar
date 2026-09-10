@@ -6,6 +6,7 @@
 use super::common::{bytes_to_gib, percent};
 use super::snapshot::{InventorySnapshot, RowSource, SheetSpec};
 use super::{Cell, Column, Table};
+use crate::vcenter::soap::ManagedObject;
 use crate::vcenter::VCenterConnection;
 
 /// `VirtualMachine` properties this sheet reads.
@@ -55,6 +56,12 @@ pub const VM_PROPS: &[&str] = &[
     "summary.config.numVirtualDisks",
     "summary.storage.unshared",
     "config.latencySensitivity.level",
+    // For `EnableUUID` only. vim25 cannot ask for one key of `extraConfig`, so
+    // the whole array arrives: on the reference lab that is ~58 entries per VM
+    // and 271 distinct keys. Measured at export time it costs little, but it
+    // is the reason this sheet is the heaviest in the union — worth knowing
+    // before adding a second extraConfig-derived column elsewhere.
+    "config.extraConfig",
     "config.changeTrackingEnabled",
     "config.swapPlacement",
     "config.files.logDirectory",
@@ -72,6 +79,29 @@ pub const VM_PROPS: &[&str] = &[
 /// RVTools' labels, except where our unit differs: RVTools reports
 /// `Provisioned MiB` / `In Use MiB`, and we report GiB, so the label says GiB.
 /// Never label a GiB value MiB.
+/// One boolean out of `config.extraConfig`, by key.
+///
+/// Verified live 2026-09-10: the array's elements are `<OptionValue>` — the
+/// declared type, not the field name — each carrying `key` and `value`
+/// children. `disk.EnableUUID` was present on 15 of 113 VMs and every value
+/// read `TRUE` in capitals, so the comparison is case-insensitive; a naive
+/// `parse::<bool>()` would have returned `None` for every VM that has it.
+///
+/// A key that is absent yields `None`, not `false`. The setting being unset
+/// and the setting being off are different facts, and only one of them means
+/// a guest cannot see its disk serial numbers.
+fn extra_config_flag(vm: &ManagedObject, key: &str) -> Option<bool> {
+    let entry = vm
+        .array_prop("config.extraConfig")
+        .into_iter()
+        .find(|e| e.text_at("key").as_deref() == Some(key))?;
+    match entry.text_at("value")?.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" => Some(true),
+        "false" | "0" => Some(false),
+        _ => None,
+    }
+}
+
 pub fn columns() -> Vec<Column> {
     vec![
         Column::text("VM"),
@@ -112,6 +142,7 @@ pub fn columns() -> Vec<Column> {
         Column::number("Disks"),
         Column::number("Unshared GiB"),
         Column::text("Latency Sensitivity"),
+        Column::bool("EnableUUID"),
         Column::bool("CBT"),
         Column::text("Swap file placement"),
         Column::text("Resource pool"),
@@ -205,6 +236,7 @@ pub fn rows(snap: &InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String
             // to stay consistent with Provisioned/In Use on this sheet.
             Cell::opt_num(vm.i64_prop("summary.storage.unshared").map(bytes_to_gib)),
             Cell::opt_text(vm.str_prop("config.latencySensitivity.level")),
+            Cell::opt_bool(extra_config_flag(vm, "disk.EnableUUID")),
             Cell::opt_bool(vm.bool_prop("config.changeTrackingEnabled")),
             Cell::opt_text(vm.str_prop("config.swapPlacement")),
             // A moref; the inventory index turns it into the pool's name.
@@ -263,6 +295,64 @@ mod tests {
 
     fn cell(rows: &[Vec<Cell>], row: usize, label: &str) -> Cell {
         rows[row][col(&columns(), label)].clone()
+    }
+
+    /// A VM carrying an `extraConfig` array shaped the way the live vCenter
+    /// returns it: `<OptionValue>` elements — the declared type, not the field
+    /// name — each with `key` and `value` children.
+    fn vm_with_extra_config(moref: &str, entries: &[(&str, &str)]) -> ManagedObject {
+        let inner: String = entries
+            .iter()
+            .map(|(k, v)| {
+                format!("<OptionValue><key>{k}</key><value>{v}</value></OptionValue>")
+            })
+            .collect();
+        let fragment = format!(
+            r#"<objects><obj type="VirtualMachine">{moref}</obj><propSet><name>name</name><val>probe</val></propSet><propSet><name>config.extraConfig</name><val>{inner}</val></propSet></objects>"#
+        );
+        ManagedObject::from_element(
+            &crate::vcenter::xml::parse(&fragment).expect("fragment parses"),
+        )
+    }
+
+    /// Live values come back as `TRUE` in capitals, which `parse::<bool>()`
+    /// would reject — every VM that has the setting would have read as unset.
+    #[test]
+    fn enable_uuid_is_read_case_insensitively() {
+        let vm = vm_with_extra_config("vm-1", &[("disk.EnableUUID", "TRUE")]);
+        assert_eq!(extra_config_flag(&vm, "disk.EnableUUID"), Some(true));
+
+        let vm = vm_with_extra_config("vm-2", &[("disk.EnableUUID", "false")]);
+        assert_eq!(extra_config_flag(&vm, "disk.EnableUUID"), Some(false));
+    }
+
+    /// Unset and off are different facts: only one of them means the guest
+    /// cannot see its disk serial numbers.
+    #[test]
+    fn an_absent_extra_config_key_is_not_false() {
+        let other_keys = vm_with_extra_config("vm-1", &[("nvram", "probe.nvram")]);
+        assert_eq!(extra_config_flag(&other_keys, "disk.EnableUUID"), None);
+
+        // And a VM with no extraConfig at all must not panic.
+        let bare = vm("vm-2", &[("name", "bare")]);
+        assert_eq!(extra_config_flag(&bare, "disk.EnableUUID"), None);
+    }
+
+    /// The key is found among its neighbours, not just at position zero.
+    #[test]
+    fn the_wanted_key_is_found_among_many() {
+        let vm = vm_with_extra_config(
+            "vm-1",
+            &[
+                ("nvram", "probe.nvram"),
+                ("migrate.hostLog", "probe.hlog"),
+                ("disk.EnableUUID", "TRUE"),
+                ("svga.present", "TRUE"),
+            ],
+        );
+        assert_eq!(extra_config_flag(&vm, "disk.EnableUUID"), Some(true));
+        assert_eq!(extra_config_flag(&vm, "svga.present"), Some(true));
+        assert_eq!(extra_config_flag(&vm, "not.a.key"), None);
     }
 
     #[test]

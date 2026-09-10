@@ -184,6 +184,15 @@ fn empty_note_for(sheet: &str) -> Option<&'static str> {
 /// generically so no fetcher has to remember it.
 pub const VI_SDK_SERVER: &str = "VI SDK Server";
 
+/// The source vCenter's instance UUID, RVTools' companion to `VI SDK Server`
+/// and appended the same way.
+///
+/// A hostname is not a stable identity — a vCenter can be renamed, and two
+/// estates can each have a `vcenter01`. The instance UUID is what says two
+/// exports came from the same server. Red Hat's Migration Advisor rejects an
+/// RVTools upload that lacks it.
+pub const VI_SDK_UUID: &str = "VI SDK UUID";
+
 /// Where an object sits in the inventory. RVTools carries these on nearly every
 /// sheet; like `VI SDK Server` they are appended in one place rather than
 /// restated by ~20 sheet modules.
@@ -210,6 +219,7 @@ impl Table {
     pub fn extend_from(
         &mut self,
         server: &str,
+        instance_uuid: Option<&str>,
         rows: Vec<(String, Vec<Cell>)>,
         source: snapshot::RowSource,
         paths: &snapshot::PathIndex,
@@ -228,6 +238,7 @@ impl Table {
                 snapshot::RowSource::None => {}
             }
             row.push(Cell::Text(server.to_string()));
+            row.push(Cell::opt_text(instance_uuid.map(str::to_string)));
             self.rows.push(row);
         }
     }
@@ -259,6 +270,7 @@ impl Table {
     /// `extend_from` appends.
     pub fn with_source_column(mut self) -> Self {
         self.columns.push(Column::text(VI_SDK_SERVER));
+        self.columns.push(Column::text(VI_SDK_UUID));
         self
     }
 }

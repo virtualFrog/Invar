@@ -571,7 +571,12 @@ pub async fn fetch_tables_with_progress(
     let datastore_props = union(&ds_sets);
     let rp_props = union(&rp_sets);
     let want_licenses = specs.iter().any(|s| s.wants_licenses);
-    let want_about = specs.iter().any(|s| s.wants_about);
+    // Always fetched, not just when a sheet asks: `VI SDK UUID` is appended to
+    // every sheet and comes off `about.instanceUuid`. `RetrieveServiceContent`
+    // needs no authentication and returns one small object, so the cost of
+    // taking it unconditionally is far below the cost of a column that is
+    // silently blank whenever vSource was not among the requested sheets.
+    let want_about = true;
     let want_files = specs.iter().any(|s| s.wants_files);
 
     let mut tables: Vec<Table> = specs
@@ -626,9 +631,21 @@ pub async fn fetch_tables_with_progress(
             }
         };
 
+        let instance_uuid = snapshot
+            .about
+            .as_ref()
+            .and_then(|a| a.text_at("instanceUuid"))
+            .filter(|s| !s.is_empty());
+
         for (spec, table) in specs.iter().zip(tables.iter_mut()) {
             match (spec.rows)(&snapshot) {
-                Ok(rows) => table.extend_from(&label, rows, spec.source, &snapshot.paths),
+                Ok(rows) => table.extend_from(
+                    &label,
+                    instance_uuid.as_deref(),
+                    rows,
+                    spec.source,
+                    &snapshot.paths,
+                ),
                 Err(e) => table.warnings.push(format!("{label}: {e}")),
             }
             // Only the sheet that asked for the walk hears about it. Pushing
