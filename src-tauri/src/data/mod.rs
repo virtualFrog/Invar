@@ -9,6 +9,7 @@ pub mod common;
 pub mod drift;
 pub mod dvport;
 pub mod dvswitch;
+pub mod exceptions;
 pub mod hostnet;
 pub mod insights;
 pub mod snapshot;
@@ -79,6 +80,7 @@ pub const SHEETS: &[&SheetSpec] = &[
     // appends anything absent from `RVTOOLS_SHEET_ORDER` rather than dropping
     // it, so the workbook carries it too.
     &drift::SPEC,
+    &exceptions::SPEC,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -175,6 +177,11 @@ fn empty_note_for(sheet: &str) -> Option<&'static str> {
         ),
         "vHealth" => Some(
             "No health findings. RVTools' checks all passed against this inventory.",
+        ),
+        "Exceptions" => Some(
+            "No per-VM overrides. Every VM is treated the way its cluster says, which \
+             is the simpler estate to reason about. DRS rules and per-VM DRS \
+             automation are not covered yet — see the sheet's notes.",
         ),
         _ => None,
     }
