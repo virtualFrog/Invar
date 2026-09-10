@@ -3,12 +3,15 @@
 How to build and run the Invar app on Windows 10/11, from a clean
 machine to a shipped installer.
 
-> **Testing status.** The app is developed on macOS. The two platform-specific
-> code paths (config-file permissions, shutdown signal handling) were compiled
-> and checked for Windows, and nothing in the codebase uses POSIX paths or
-> shells — but **no run of the finished app on Windows has been observed yet**.
-> Treat the first Windows run as a smoke test, not a formality. Anything that
-> does go wrong is likely in the [Troubleshooting](#troubleshooting) table.
+> **Testing status — verified on Windows 11 (26200) against the live lab,
+> 2026-09-10.** clippy and the 151 tests pass; the headless exporter and the
+> desktop app both authenticate through **Windows Credential Manager**, read
+> inventory, and write an identical 26-sheet workbook. The GUI renders, the
+> settings dialog never displays a stored password, `Test` reports the vCenter
+> build, XLSX export through the native save dialog works, and the app shuts
+> down leaving no orphaned process and no password on disk. Both installers
+> were installed, run and uninstalled cleanly — see
+> [Choosing an installer](#choosing-an-installer).
 
 ---
 
@@ -195,9 +198,37 @@ currently *Invar* 0.1.0, so expect something close to
 `Invar_0.1.0_x64_en-US.msi` and
 `Invar_0.1.0_x64-setup.exe`.
 
-Both are produced because `tauri.conf.json` sets `"targets": "all"`. The MSI is
-better for Group Policy or Intune deployment; the NSIS `-setup.exe` is the
-friendlier double-click installer.
+Both are produced because `tauri.conf.json` sets `"targets": "all"`.
+
+### Choosing an installer
+
+They are not interchangeable. Verified 2026-09-10 by installing, running and
+uninstalling each on Windows 11:
+
+| | `.msi` | `-setup.exe` (NSIS) |
+|---|---|---|
+| Scope | per-machine (`ALLUSERS=1`) | **per-user** (`asInvoker`) |
+| Admin rights | **required** | **not required** |
+| Installs to | `C:\Program Files\Invar` | `%LOCALAPPDATA%\Invar` |
+| Start Menu | machine-wide, in an `Invar\` folder | per-user, top level |
+| Desktop shortcut | no | yes |
+| Silent install | `msiexec /i … /qn` | `Invar_<version>_x64-setup.exe /S` |
+| Silent uninstall | `msiexec /X {ProductCode} /qn` | `%LOCALAPPDATA%\Invar\uninstall.exe /S` |
+
+**A user without local administrator rights must take the NSIS `-setup.exe`.**
+The MSI is the one to hand to Group Policy or Intune.
+
+Both ship `invar-export.exe` alongside `invar.exe`, but **neither adds the
+install directory to `PATH`** — invoke the exporter by full path, or add its
+directory yourself.
+
+Both uninstallers remove every file, shortcut and registry entry they created.
+Neither removes your settings, and that is deliberate: `config.json` and the
+vCenter password in Credential Manager survive so a reinstall keeps working.
+**Uninstalling therefore leaves a vSphere credential on the machine** — clear it
+by hand from *Credential Manager > Windows Credentials* (`ch.soultec.invar`) if
+that matters. The WebView2 data directory (`%LOCALAPPDATA%\ch.soultec.invar`,
+~65 MB) is also left behind.
 
 A release build takes longer than a dev build — budget 10–20 minutes the first
 time.
@@ -320,7 +351,10 @@ with CRLF. Nothing in the build cares.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `error: linker 'link.exe' not found` | C++ build tools missing | Install Build Tools with the **Desktop development with C++** workload, then reopen PowerShell |
+| `error: linker 'link.exe' not found`, but `link.exe` **is** on disk under `…\BuildTools\VC\Tools\MSVC\…` | the tools are installed but not on `PATH`; a plain PowerShell session does not pick them up | Run the build from a **Developer PowerShell for VS 2022**, or import the environment first: `cmd /c '"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" >nul && set'` and apply each `NAME=VALUE` to `$env:`. |
+| `link: extra operand …symbols.o` / `Try 'link --help'` when building from **Git Bash** | Git Bash puts GNU coreutils' `link` ahead of MSVC's `link.exe` on `PATH`, so cargo invokes the wrong one | Build from PowerShell, not Git Bash. The error names `link`, not `link.exe` — that is the tell. |
 | `error: Microsoft Visual C++ 14.0 or greater is required` | same | as above |
+| `os error 112` / `There is not enough space on the disk` mid-build | a debug tree runs to ~7 GB and a release tree to ~2 GB | `Remove-Item -Recurse -Force src-tauri\target\debug` — it is pure cargo cache and regenerates |
 | Build works, window is blank or never opens | WebView2 Runtime missing | Install the Evergreen Bootstrapper (Windows 10) |
 | `npm : command not found` after installing Node | `PATH` not refreshed | Close and reopen PowerShell |
 | Want to run without the Tauri CLI | the crate has a single binary, so `cargo run` works from `src-tauri\` | Prefer `npm run tauri dev` — it also watches for changes and rebuilds |

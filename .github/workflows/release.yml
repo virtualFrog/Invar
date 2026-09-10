@@ -31,6 +31,31 @@ jobs:
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
+      # The tag is the only thing that names the release, but the bundlers read
+      # the version out of the three files below. Left unchecked, tagging v0.2.0
+      # without bumping them ships 0.1.0 binaries inside a release called 0.2.0
+      # — and nothing downstream notices. Step 1 of docs/RELEASING.md says to
+      # bump all three; this is what makes forgetting it fail loudly.
+      - name: Check the version files agree with the tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAURI=$(jq -r .version src-tauri/tauri.conf.json)
+          CARGO=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
+          PKG=$(jq -r .version package.json)
+          echo "tag=$VERSION tauri.conf.json=$TAURI Cargo.toml=$CARGO package.json=$PKG"
+          fail=0
+          for pair in "tauri.conf.json:$TAURI" "Cargo.toml:$CARGO" "package.json:$PKG"; do
+            name="${pair%%:*}"; got="${pair#*:}"
+            if [ "$got" != "$VERSION" ]; then
+              echo "::error::$name is $got but the tag is $VERSION"
+              fail=1
+            fi
+          done
+          if [ "$fail" = "1" ]; then
+            echo "Bump all three to $VERSION, commit, then re-tag. See docs/RELEASING.md."
+            exit 1
+          fi
+
       - name: Create the draft
         id: create
         uses: actions/github-script@v7

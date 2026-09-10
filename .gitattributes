@@ -1,0 +1,15 @@
+# Normalise line endings so a Windows checkout does not report every generated
+# file as modified. `core.autocrlf=true` (the Git for Windows default) rewrites
+# these on checkout, and `tauri build` rewrites Cargo.toml and the generated
+# capability schemas again on every build — producing a dirty tree with zero
+# content change, which buries real edits.
+* text=auto eol=lf
+
+# Genuinely binary, so Git must never touch them.
+*.png   binary
+*.ico   binary
+*.icns  binary
+*.xlsx  binary
+*.dmg   binary
+*.msi   binary
+*.exe   binary

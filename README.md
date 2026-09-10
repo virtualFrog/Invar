@@ -36,11 +36,18 @@ Download the build for your platform from the
 | Platform | File |
 |---|---|
 | macOS | `Invar_<version>_universal.dmg` (Apple silicon and Intel) |
-| Windows | `Invar_<version>_x64-setup.exe` or the `.msi` |
+| Windows | `Invar_<version>_x64-setup.exe`, or the `.msi` — see below |
 | Linux | `.deb`, `.rpm` or `.AppImage` |
 
+On Windows the two installers differ in more than packaging. The
+`-setup.exe` installs **per user** into `%LOCALAPPDATA%` and needs **no
+administrator rights**; the `.msi` installs **per machine** into
+`C:\Program Files` and **requires elevation**, which makes it the one for Group
+Policy or Intune. If you are not a local administrator, take the `-setup.exe`.
+
 Each release also ships `invar-export`, the headless exporter, as a standalone
-binary for each platform.
+binary for each platform. It is also installed alongside the desktop app on
+Windows, though neither installer puts it on `PATH`.
 
 Linux packages need `libwebkit2gtk-4.1-0` and `libgtk-3-0`, which the `.deb` and
 `.rpm` declare as dependencies.

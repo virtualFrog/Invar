@@ -89,14 +89,24 @@ curl -sk -X POST "https://$VC_HOST/sdk" \
 
 | | |
 |---|---|
-| Datacenter | `vcf-mgmt-dc01` |
-| Cluster | `vcf-mgmt-cl01` (1), DRS and HA both enabled |
-| ESXi hosts | 3 |
-| VMs | 162 via SOAP, of which 7 are templates |
-| Datastores | 4 |
-| Networks | 60 (59 distributed portgroups, 1 standard) |
-| Resource pools | 43 |
-| Snapshots | 3 |
+| | 2026-09-03 | 2026-09-10 |
+|---|---|---|
+| Datacenter | `vcf-mgmt-dc01` | unchanged |
+| Cluster | `vcf-mgmt-cl01` (1), DRS and HA both enabled | unchanged |
+| ESXi hosts | 3 | 3 |
+| VMs | 162 via SOAP, of which 7 are templates | **113**, of which **9** are templates |
+| Datastores | 4 | 4 |
+| Networks | 60 (59 distributed portgroups, 1 standard) | not re-measured |
+| Resource pools | 43 | 47 |
+| Snapshots | 3 | 5 |
+
+The VM count **fell by roughly a third between those two dates** while hosts and
+datastores held steady, and the derived sheets moved with it (vDisk 345 → 320,
+vHealth 166 → 120). Three consecutive runs a minute apart returned identical
+counts, and vInfo, vCPU, vMemory and vTools all agreed at 113, so this is the
+Supervisor workload shrinking rather than anything in the tool. Recorded here
+because a stale reference number is exactly what turns lab churn into a
+phantom regression.
 
 **VM count depends on which API you ask.** REST `/rest/vcenter/vm` reports 154;
 the SOAP `ContainerView` the app uses reports **161**. The difference is exactly
@@ -176,6 +186,7 @@ list before "fixing" an empty column.**
 | vInfo | `Annotation` | 46/161 | Most VMs simply carry no annotation. |
 | vHealth | NTP / NTPD findings | 0 | All three hosts have NTP servers set and `ntpd` running. A clean result. |
 | all | vCLS exclusion | never fires | **No VM in this lab is named `vCLS-*`.** The `starts_with("vCLS-")` filter in `common.rs` and `vinfo.rs` is inert here, so it is *not* exercised against the live lab — only by unit tests. Do not read a passing lab run as evidence that filter works. |
+| all (CSV) | formula defusing | never fires | **No cell in a full export begins with `=`, `+`, `@` or a control character** (checked across all 26 sheets, 2026-09-10), so `export::defuse_formula` never triggers here. Like the vCLS filter, only unit tests cover it. A green lab run says nothing about CSV injection. |
 | vNetwork | `Network` | 178/234 | 56 NICs use `VirtualEthernetCardLegacyNetworkBackingInfo`, whose `deviceName` comes back empty. Their VMs do report `guest.net`, but the guest names none of those NICs either, so no source supplies a name. |
 | vNetwork | `IPv4 Address` | 97/234 | Comes from `guest.net`, which needs VMware Tools. |
 | vMemory | `Overhead` | column absent | `runtime.memoryOverhead` was returned for **no** VM, so the column is not implemented rather than shipped always-empty. |
@@ -281,8 +292,17 @@ Consequences for anyone comparing runs:
   `CPU Usage (%)`, `Memory Usage (%)` (vInfo), `CPU usage %`, `Memory usage %`
   (vHost), and the vHost VM rollups.
 
-Observed counts sit around 161/3/345/3/166 (vInfo/vHost/vDisk/vSnapshot/vHealth)
-but were seen at 160/3/342/3/165 an hour later. Both are correct.
+Observed counts sat around 161/3/345/3/166 (vInfo/vHost/vDisk/vSnapshot/vHealth)
+on 2026-09-03, and 160/3/342/3/165 an hour later. On 2026-09-10 the same five
+read **113/3/320/5/120**. All of these are correct for the moment they were
+taken — treat any number in this file as a shape, not an assertion.
+
+**Do not count rows by counting lines.** VM annotations contain newlines, so a
+quoted CSV field can span several lines: on 2026-09-10 vInfo held 113 records
+across 222 physical lines, and vPartition 869 across 982. The quoting is valid
+RFC 4180 and Excel reads it correctly, but any check built on `wc -l` will
+roughly double its counts on the VM-derived sheets. Parse the CSV, or read the
+row count the exporter prints.
 
 ---
 

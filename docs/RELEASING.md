@@ -150,6 +150,18 @@ one, wire it up through `bundle.windows.certificateThumbprint` and
 `signCommand` in `tauri.conf.json`, or use an Azure Trusted Signing account,
 which does work from a hosted runner.
 
+**The NSIS `-setup.exe` also carries an empty `CompanyName`**, which makes that
+SmartScreen dialog read worse than it needs to — it is the field the prompt
+falls back to with no signature. This is **not** a configuration mistake:
+`bundle.publisher` is set, and Tauri uses it for the Add/Remove Programs
+`Publisher` entry, but the NSIS template it generates (`tauri-cli` 2.11.4,
+`target/release/nsis/x64/installer.nsi`) emits `VIAddVersionKey` for
+`ProductName`, `FileDescription`, `LegalCopyright`, `FileVersion` and
+`ProductVersion` only — never `CompanyName`. The MSI and `invar.exe` are both
+correct. Closing it means either an upstream fix or forking the whole installer
+template via `bundle.windows.nsis.template` to add one line, which is a poor
+trade until signing is wired up and the dialog stops appearing anyway.
+
 ---
 
 ## Not set up: auto-update
