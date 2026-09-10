@@ -10,12 +10,16 @@ use invar_lib::vcenter::{SessionCache, VCenterConnection};
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
-    let conn = VCenterConnection {
-        host: std::env::var("VC_HOST").map_err(|_| "set VC_HOST")?,
-        username: std::env::var("VC_USER").map_err(|_| "set VC_USER")?,
-        password: std::env::var("VC_PASS").map_err(|_| "set VC_PASS")?,
-        skip_cert_verify: true,
-    };
+    let mut conn = VCenterConnection::new(
+        &std::env::var("VC_HOST").map_err(|_| "set VC_HOST")?,
+        &std::env::var("VC_USER").map_err(|_| "set VC_USER")?,
+    )
+    .with_password(&std::env::var("VC_PASS").map_err(|_| "set VC_PASS")?);
+    // These examples point at lab vCenters with self-signed certificates.
+    // Set VC_VERIFY_CERT=1 to run them against one with a trusted chain.
+    if std::env::var("VC_VERIFY_CERT").as_deref() != Ok("1") {
+        conn = conn.trusting_invalid_certs();
+    }
 
     let sheet = std::env::args().nth(1).unwrap_or_else(|| "vInfo".into());
     let cache = SessionCache::new();

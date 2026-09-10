@@ -15,8 +15,13 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Connections with their passwords filled in from the credential store.
+    ///
+    /// `config::load` deliberately returns them blank — the file has not held
+    /// passwords since they moved to the OS credential store — so every fetch
+    /// path goes through `resolve`.
     fn connections(&self) -> Result<Vec<VCenterConnection>, String> {
-        Ok(config::load(&self.config_path)?.connections)
+        config::resolve(&config::load(&self.config_path)?)
     }
 }
 
@@ -33,7 +38,13 @@ async fn save_config(cfg: AppConfig, state: tauri::State<'_, AppState>) -> Resul
 }
 
 #[tauri::command]
-async fn test_connection(conn: VCenterConnection, state: tauri::State<'_, AppState>) -> Result<String, String> {
+async fn test_connection(mut conn: VCenterConnection, state: tauri::State<'_, AppState>) -> Result<String, String> {
+    // The settings dialog cannot show an existing password, so it cannot send
+    // one back. A blank here means "use what is stored", not "log in blank".
+    if conn.password.is_empty() {
+        conn.password = vcenter::secrets::load(&conn.label(), &conn.username)?
+            .ok_or("No password stored for this connection. Type one, then test.")?;
+    }
     let session = state.cache.get(&conn).await?;
     let about = session
         .soap
@@ -44,6 +55,24 @@ async fn test_connection(conn: VCenterConnection, state: tauri::State<'_, AppSta
         .and_then(|a| a.text_at("fullName"))
         .unwrap_or_else(|| "connected".into());
     Ok(full_name)
+}
+
+/// Where settings live, and whether secrets can be stored at all.
+///
+/// The settings dialog says so plainly rather than letting a save fail with a
+/// keyring error nobody can act on.
+#[derive(serde::Serialize)]
+struct StorageInfo {
+    config_path: String,
+    credential_store: bool,
+}
+
+#[tauri::command]
+fn storage_info(state: tauri::State<'_, AppState>) -> StorageInfo {
+    StorageInfo {
+        config_path: state.config_path.display().to_string(),
+        credential_store: vcenter::secrets::available(),
+    }
 }
 
 /// Sheets the UI can ask for, in tab order. Driven off `data::SHEETS`, so
@@ -57,7 +86,7 @@ fn list_sheets() -> Vec<&'static str> {
 async fn fetch_sheet(sheet: String, state: tauri::State<'_, AppState>) -> Result<Table, String> {
     let conns = state.connections()?;
     if conns.is_empty() {
-        return Err("No vCenter connections configured — add one in Settings.".into());
+        return Err("No vCenter connections configured. Add one in Settings.".into());
     }
     let spec = data::SHEETS
         .iter()
@@ -79,7 +108,7 @@ async fn fetch_sheet(sheet: String, state: tauri::State<'_, AppState>) -> Result
 async fn fetch_all_tables(state: &AppState) -> Result<(Vec<Table>, Vec<String>), String> {
     let conns = state.connections()?;
     if conns.is_empty() {
-        return Err("No vCenter connections configured — add one in Settings.".into());
+        return Err("No vCenter connections configured. Add one in Settings.".into());
     }
     let servers = conns.iter().map(|c| c.label()).collect();
     // One inventory fetch per vCenter, shared by every sheet, rather than one
@@ -114,7 +143,7 @@ async fn fetch_insights(
 ) -> Result<data::insights::Insights, String> {
     let conns = state.connections()?;
     if conns.is_empty() {
-        return Err("No vCenter connections configured — add one in Settings.".into());
+        return Err("No vCenter connections configured. Add one in Settings.".into());
     }
     Ok(data::insights::fetch_insights_all(&conns, &state.cache).await)
 }
@@ -177,7 +206,7 @@ async fn export_topology_report(
 
     let conns = state.connections()?;
     if conns.is_empty() {
-        return Err("No vCenter connections configured — add one in Settings.".into());
+        return Err("No vCenter connections configured. Add one in Settings.".into());
     }
     let topology = data::topology::fetch_topology_all(&conns, &state.cache).await;
 
@@ -235,6 +264,7 @@ pub fn run() {
             get_config,
             save_config,
             test_connection,
+            storage_info,
             list_sheets,
             fetch_sheet,
             fetch_insights,

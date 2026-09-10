@@ -309,22 +309,49 @@ The repo's older `verify`, `export` and `concurrent` examples take `VC_HOST` /
 ## Security: storing the password
 
 `config.json` lives at `%APPDATA%\ch.soultec.invar\config.json` on Windows and
-`~/Library/Application Support/ch.soultec.invar/config.json` on macOS. **It
-stores the vCenter password in cleartext.**
+`~/Library/Application Support/ch.soultec.invar/config.json` on macOS. **It no
+longer holds the password.** Hosts, usernames and the certificate policy are in
+the file; the password goes to the OS credential store (`src-tauri/src/vcenter/secrets.rs`):
 
-`config::restrict_permissions` chmods it to `0600` — but only on Unix. The
-`#[cfg(not(unix))]` arm is an empty function
-(`src-tauri/src/vcenter/config.rs:82`), so on Windows the file keeps default
-ACLs. Confirmed on this machine 2026-09-03:
+| Platform | Store |
+|---|---|
+| macOS | Keychain, service `ch.soultec.invar` |
+| Windows | Credential Manager |
+| Linux | Secret Service |
+
+A `config.json` written by an older build still has cleartext passwords in it.
+The first read migrates them into the credential store and rewrites the file
+without them. Nothing deletes the old file's contents from a backup, so rotate
+any password that lived in a `config.json` that was ever copied off the machine.
+
+### What this fixed
+
+Until 2026-09-10 the file stored the password as a plain string.
+`config::restrict_permissions` chmod'd it to `0600`, but only on Unix: the
+`#[cfg(not(unix))]` arm was an empty function, so on Windows the file kept
+default ACLs. Confirmed on this machine 2026-09-03:
 
 ```
 NT AUTHORITY\SYSTEM        FullControl
-BUILTIN\Administrators     FullControl     <-- any local admin reads the password
+BUILTIN\Administrators     FullControl     <-- any local admin read the password
 SOULTEC\dario.doerflinger  FullControl
 ```
 
-Windows is a first-class target for this app, so treat the GUI config path as
-exposing the password to every local administrator until this is fixed. Tracked
-in `docs/PARITY-PLAN.md` section 4; the fix is the OS credential store (DPAPI on
-Windows, Keychain, libsecret). Prefer the env-var examples for development work
-that does not need the GUI.
+The file is still chmod'd `0600` on Unix, because it still names every vCenter
+and account this operator uses. That is worth keeping private even though it is
+no longer worth stealing.
+
+### Headless machines
+
+A Linux service has no Secret Service, and `keyring` reports that as
+`NoDefaultStore` rather than failing obscurely. Supply the password through
+`INVAR_PASSWORD_<n>` instead, 1-based over the connection list. `config::resolve`
+checks the environment before the credential store for exactly this reason.
+
+### Certificates
+
+`skip_cert_verify` now defaults to **false**, and is a per-connection checkbox
+in Settings. This lab's vCenter uses a self-signed certificate issued by
+`CN=CA, DC=vsphere, DC=local`, so its connection needs the box ticked. It is not
+ticked for you, and a config file that does not mention certificates verifies
+them.

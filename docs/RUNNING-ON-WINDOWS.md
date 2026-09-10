@@ -141,21 +141,39 @@ the `VI SDK Server` column:
     {
       "host": "vcf-mgmt-vc91.vcf.soultec.lab",
       "username": "administrator@vsphere.local",
-      "password": "<password>",
       "skip_cert_verify": true
     }
   ]
 }
 ```
 
-`skip_cert_verify` must stay `true` for lab vCenters with self-signed
-certificates.
+**There is no `password` field, and adding one is not how you set a password.**
+Passwords live in Windows Credential Manager, keyed by service
+`ch.soultec.invar` and account `<host>|<username>` — for the example above,
+`vcf-mgmt-vc91.vcf.soultec.lab|administrator@vsphere.local`. Set one through
+the app's Settings dialog, or from PowerShell:
 
-> **Credentials on Windows are less protected than on macOS/Linux.** On those
-> platforms the app chmods this file to `0600`. Windows has no equivalent step,
-> so the file relies on the default ACL of your roaming profile — which keeps
-> other standard users out, but not local administrators. Don't store
-> production vCenter credentials on a shared or lab machine.
+```powershell
+cmdkey /generic:ch.soultec.invar `
+       /user:"vcf-mgmt-vc91.vcf.soultec.lab|administrator@vsphere.local" `
+       /pass
+```
+
+A `config.json` from an older build that still has `"password"` in it is
+migrated on first read: the value moves into Credential Manager and the file is
+rewritten without it.
+
+`skip_cert_verify` defaults to `false`. Set it to `true` only for a vCenter with
+a self-signed certificate, as this lab has. Leaving it out means certificates
+are verified.
+
+For a scheduled task, where Credential Manager belongs to the wrong user or is
+not unlocked, pass the password in the environment instead:
+
+```powershell
+$env:INVAR_PASSWORD_1 = '<password>'
+invar-export.exe --xlsx C:\inventory\today.xlsx
+```
 
 ---
 
@@ -188,9 +206,14 @@ time.
 be built on Windows; a Mac cannot produce it. (Cross-compiling is blocked well
 before linking — the Windows resource compiler isn't available on macOS.)
 
-**The installer is unsigned**, so SmartScreen will show *"Windows protected your
-PC"* on first run. Choose **More info → Run anyway**, or sign the binary with a
-code-signing certificate if it is going to be distributed.
+**A locally built installer is unsigned**, so SmartScreen will show *"Windows
+protected your PC"* on first run. Choose **More info -> Run anyway**.
+
+Release builds come out of `.github/workflows/release.yml`, which builds the
+Windows installers on a Windows runner. That workflow signs macOS builds when
+the Apple secrets are configured; Windows code signing is **not** wired up, so
+released `.msi` and `.exe` files carry the same SmartScreen warning until a
+code-signing certificate is added.
 
 ---
 

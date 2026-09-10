@@ -280,6 +280,28 @@ The reference implementation got these wrong; don't inherit them.
   admin passwords to the whole network.
 - Don't log credentials.
 
+### Where secrets live, and what must not change
+
+- **Passwords are not in `config.json`.** They go to the OS credential store via
+  `vcenter::secrets`. `VCenterConnection::password` is `#[serde(default,
+  skip_serializing)]`, which does double duty: it keeps secrets out of the file
+  *and* out of the JSON `get_config` hands to the webview. Removing that
+  attribute reintroduces both holes at once.
+- `config::load` returns connections with **blank** passwords by design.
+  `config::resolve` is what fills them in, checking `INVAR_PASSWORD_<n>` before
+  the credential store so a headless Linux box with no Secret Service works.
+- **An empty password on save means "keep the stored one", never "erase it".**
+  The settings dialog cannot display an existing password, so it cannot resend
+  one; treating blank as erase would wipe a working credential on every edit.
+- **`skip_cert_verify` defaults to `false`.** An earlier build pinned it to
+  `true` in the settings UI with no way to turn it off, so every connection the
+  app made was open to interception. It is a per-connection checkbox now. Do not
+  reintroduce a default that skips verification.
+- **CSV is an injection surface.** A cell starting `=`, `+`, `@` or a control
+  character executes when Excel opens the file, and VM names and annotations are
+  free text. `export::defuse_formula` handles it. `-` is deliberately excluded:
+  it starts every negative number.
+
 ---
 
 ## Build/run notes

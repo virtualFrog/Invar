@@ -44,11 +44,10 @@ fn sets(
 
 #[tokio::main]
 async fn main() {
-    let dir = std::env::var("APPDATA")
-        .map(|a| std::path::PathBuf::from(a).join("ch.soultec.invar"))
-        .expect("APPDATA must be set");
+    let dir = config::default_dir().expect("a settings directory");
     let cfg = config::load(&config::config_path(dir)).expect("config loads");
-    let conn = cfg.connections.first().expect("a configured vCenter").clone();
+    let conns = config::resolve(&cfg).expect("passwords resolve");
+    let conn = conns.first().expect("a configured vCenter").clone();
 
     let cache = SessionCache::new();
     let session = match cache.get(&conn).await {

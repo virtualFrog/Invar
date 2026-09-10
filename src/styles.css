@@ -546,14 +546,56 @@ dialog h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
 
 .hint { margin: 0 0 14px; font-size: 11.5px; color: var(--text-faint); line-height: 1.5; }
 
+.hint .path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.hint.warn { color: var(--warning); }
+
 .connection {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.connection:last-child { border-bottom: none; }
+
+.connection-fields {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr 1fr auto auto;
   gap: 7px;
-  margin-bottom: 8px;
   align-items: center;
 }
-.connection input { width: 100%; }
+.connection-fields input { width: 100%; }
+
+/* The certificate decision sits under the row it belongs to, not beside it:
+ * it is the one setting here with a security consequence, and a checkbox
+ * squeezed into a fifth grid column reads as an afterthought. */
+.connection-cert {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.connection-cert input { accent-color: var(--warning); }
+
+/* A password box that must be filled in before this connection will work
+ * again, because its host or username just changed under a stored credential. */
+.connection-fields input.needs-value {
+  border-color: var(--warning);
+}
+
+.connection-result {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  min-height: 1em;
+}
+.connection-result.bad { color: var(--danger); }
+
 
 .dialog-actions { display: flex; gap: 8px; margin-top: 14px; align-items: center; }
 .spacer { flex: 1; }

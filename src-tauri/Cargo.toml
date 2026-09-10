@@ -39,3 +39,4 @@ quick-xml = "0.36"
 rust_xlsxwriter = { version = "0.79", features = ["chrono"] }
 chrono = "0.4"
 tauri-plugin-dialog = "2"
+keyring = "4.2"

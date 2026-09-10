@@ -1,5 +1,6 @@
 pub mod config;
 pub mod rest;
+pub mod secrets;
 pub mod session;
 pub mod soap;
 pub mod xml;

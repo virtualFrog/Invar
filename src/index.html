@@ -63,8 +63,12 @@
       <form method="dialog">
         <h2>vCenter connections</h2>
         <p class="hint">
-          Credentials are stored in this app's config directory, readable only by
-          your user account.
+          Passwords go to your operating system's credential store, not to a file.
+          Hosts and usernames are kept in <span id="config-path" class="path"></span>.
+        </p>
+        <p id="credential-warning" class="hint warn" hidden>
+          No credential store is available on this machine. Passwords cannot be
+          saved here. Set INVAR_PASSWORD_1 in the environment instead.
         </p>
         <div id="connections"></div>
         <div class="dialog-actions">

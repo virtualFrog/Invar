@@ -20,24 +20,23 @@ async fn main() {
     let out_json = args.next().unwrap_or_else(|| "probe.json".into());
     let out_xlsx = args.next().unwrap_or_else(|| "probe.xlsx".into());
 
-    let dir = std::env::var("APPDATA")
-        .map(|a| std::path::PathBuf::from(a).join("ch.soultec.invar"))
-        .expect("APPDATA must be set");
+    let dir = config::default_dir().expect("a settings directory");
     let path = config::config_path(dir);
     let cfg = config::load(&path).expect("config loads");
-    eprintln!("config: {} ({} connection(s))", path.display(), cfg.connections.len());
-    assert!(!cfg.connections.is_empty(), "no vCenter configured");
+    let conns = config::resolve(&cfg).expect("passwords resolve");
+    eprintln!("config: {} ({} connection(s))", path.display(), conns.len());
+    assert!(!conns.is_empty(), "no vCenter configured");
 
     let cache = SessionCache::new();
-    let servers: Vec<String> = cfg.connections.iter().map(|c| c.label()).collect();
+    let servers: Vec<String> = conns.iter().map(|c| c.label()).collect();
 
     let started = std::time::Instant::now();
     let tables = vec![
-        vinfo::fetch_vinfo_all(&cfg.connections, &cache).await,
-        vhost::fetch_vhost_all(&cfg.connections, &cache).await,
-        vdisk::fetch_vdisk_all(&cfg.connections, &cache).await,
-        vsnapshot::fetch_vsnapshot_all(&cfg.connections, &cache).await,
-        vhealth::fetch_vhealth_all(&cfg.connections, &cache).await,
+        vinfo::fetch_vinfo_all(&conns, &cache).await,
+        vhost::fetch_vhost_all(&conns, &cache).await,
+        vdisk::fetch_vdisk_all(&conns, &cache).await,
+        vsnapshot::fetch_vsnapshot_all(&conns, &cache).await,
+        vhealth::fetch_vhealth_all(&conns, &cache).await,
     ];
     let elapsed = started.elapsed();
 

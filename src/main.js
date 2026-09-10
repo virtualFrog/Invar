@@ -571,9 +571,19 @@ async function exportReport() {
 
 // ---- settings ----
 
-function connectionRow(conn = { host: "", username: "", password: "", skip_cert_verify: true }) {
+const BLANK_CONNECTION = {
+  host: "",
+  username: "",
+  skip_cert_verify: false,
+  has_stored_password: false,
+};
+
+function connectionRow(conn = BLANK_CONNECTION) {
   const wrap = document.createElement("div");
   wrap.className = "connection";
+
+  const fields = document.createElement("div");
+  fields.className = "connection-fields";
 
   const host = document.createElement("input");
   host.type = "text";
@@ -587,32 +597,93 @@ function connectionRow(conn = { host: "", username: "", password: "", skip_cert_
   user.value = conn.username;
   user.dataset.field = "username";
 
+  // The backend never sends a stored password back, so this box starts empty
+  // even for a connection that works. Its placeholder is the only signal that
+  // a credential exists, and an empty box on save means "keep what is stored".
   const pass = document.createElement("input");
   pass.type = "password";
-  pass.placeholder = "Password";
-  pass.value = conn.password;
+  pass.placeholder = conn.has_stored_password ? "Stored. Type to replace." : "Password";
+  pass.value = "";
   pass.dataset.field = "password";
+
+  const test = document.createElement("button");
+  test.type = "button";
+  test.className = "ghost";
+  test.textContent = "Test";
 
   const remove = document.createElement("button");
   remove.type = "button";
   remove.textContent = "Remove";
   remove.addEventListener("click", () => wrap.remove());
 
-  wrap.append(host, user, pass, remove);
+  fields.append(host, user, pass, test, remove);
+
+  const options = document.createElement("label");
+  options.className = "connection-cert";
+  const insecure = document.createElement("input");
+  insecure.type = "checkbox";
+  insecure.dataset.field = "skip_cert_verify";
+  insecure.checked = Boolean(conn.skip_cert_verify);
+  const optionText = document.createElement("span");
+  optionText.textContent = "Trust a certificate that does not validate (self-signed lab vCenter)";
+  options.append(insecure, optionText);
+
+  const result = document.createElement("p");
+  result.className = "connection-result";
+
+  // A stored password is keyed by host *and* username. Editing either one moves
+  // the connection to a key with nothing behind it, and saving would then leave
+  // a connection that looks configured and cannot log in. Say so at the moment
+  // the field changes, rather than letting the next fetch fail.
+  if (conn.has_stored_password) {
+    const warnOnRename = () => {
+      const renamed = host.value.trim() !== conn.host || user.value.trim() !== conn.username;
+      pass.placeholder = renamed ? "Enter the password again" : "Stored. Type to replace.";
+      pass.classList.toggle("needs-value", renamed && pass.value === "");
+    };
+    host.addEventListener("input", warnOnRename);
+    user.addEventListener("input", warnOnRename);
+    pass.addEventListener("input", warnOnRename);
+  }
+
+  test.addEventListener("click", async () => {
+    if (!host.value.trim()) {
+      result.textContent = "Enter a hostname first.";
+      return;
+    }
+    test.disabled = true;
+    result.textContent = "Connecting…";
+    try {
+      const name = await invoke("test_connection", { conn: readConnection(wrap) });
+      result.textContent = `Connected: ${name}`;
+      result.classList.remove("bad");
+    } catch (e) {
+      result.textContent = String(e);
+      result.classList.add("bad");
+    } finally {
+      test.disabled = false;
+    }
+  });
+
+  wrap.append(fields, options, result);
   return wrap;
+}
+
+/** One connection, read back out of its settings row. */
+function readConnection(row) {
+  const field = (name) => row.querySelector(`[data-field="${name}"]`).value.trim();
+  return {
+    host: field("host"),
+    username: field("username"),
+    // Not trimmed: a trailing space in a password is a valid password.
+    password: row.querySelector('[data-field="password"]').value,
+    skip_cert_verify: row.querySelector('[data-field="skip_cert_verify"]').checked,
+  };
 }
 
 function readConnections() {
   return [...el("connections").querySelectorAll(".connection")]
-    .map((row) => {
-      const field = (name) => row.querySelector(`[data-field="${name}"]`).value.trim();
-      return {
-        host: field("host"),
-        username: field("username"),
-        password: row.querySelector('[data-field="password"]').value,
-        skip_cert_verify: true,
-      };
-    })
+    .map(readConnection)
     .filter((c) => c.host !== "");
 }
 
@@ -620,6 +691,14 @@ async function openSettings() {
   const container = el("connections");
   container.replaceChildren();
   el("settings-status").textContent = "";
+  try {
+    const storage = await invoke("storage_info");
+    el("config-path").textContent = storage.config_path;
+    el("credential-warning").hidden = storage.credential_store;
+  } catch {
+    // Not knowing where the config lives is not a reason to refuse to open
+    // Settings, so the hint simply stays blank.
+  }
   try {
     const cfg = await invoke("get_config");
     const conns = cfg.connections.length > 0 ? cfg.connections : [undefined];

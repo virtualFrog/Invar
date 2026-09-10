@@ -17,14 +17,13 @@ async fn main() {
     let out_json = args.next().unwrap_or_else(|| "union.json".into());
     let out_xlsx = args.next().unwrap_or_else(|| "union.xlsx".into());
 
-    let dir = std::env::var("APPDATA")
-        .map(|a| std::path::PathBuf::from(a).join("ch.soultec.invar"))
-        .expect("APPDATA must be set");
+    let dir = config::default_dir().expect("a settings directory");
     let cfg = config::load(&config::config_path(dir)).expect("config loads");
-    assert!(!cfg.connections.is_empty(), "no vCenter configured");
+    let conns = config::resolve(&cfg).expect("passwords resolve");
+    assert!(!conns.is_empty(), "no vCenter configured");
 
     let cache = SessionCache::new();
-    let servers: Vec<String> = cfg.connections.iter().map(|c| c.label()).collect();
+    let servers: Vec<String> = conns.iter().map(|c| c.label()).collect();
 
     let started = std::time::Instant::now();
     // The same exclusion the app's export makes: sheets needing a datastore
@@ -32,7 +31,7 @@ async fn main() {
     // measures something the product never does.
     let sheets: Vec<&data::snapshot::SheetSpec> =
         data::SHEETS.iter().copied().filter(|s| !s.wants_files).collect();
-    let tables = data::snapshot::fetch_tables(&sheets, &cfg.connections, &cache).await;
+    let tables = data::snapshot::fetch_tables(&sheets, &conns, &cache).await;
     let elapsed = started.elapsed();
 
     for t in &tables {
