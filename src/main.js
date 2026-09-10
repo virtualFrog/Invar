@@ -201,10 +201,18 @@ function renderBody() {
     note = document.createElement("div");
     note.className = "empty-state";
     const head = document.createElement("strong");
-    head.textContent = "Nothing to show on this sheet";
     const body2 = document.createElement("span");
-    body2.textContent =
-      "The vCenter reported no objects of this kind. That can be correct — check the sheet's notes before treating it as a fault.";
+    // A findings sheet supplies its own wording: on those, no rows is the good
+    // result, and the generic "no objects of this kind" would report a clean
+    // environment as though the query had failed.
+    if (table.empty_note) {
+      head.textContent = "Nothing flagged";
+      body2.textContent = table.empty_note;
+    } else {
+      head.textContent = "Nothing to show on this sheet";
+      body2.textContent =
+        "The vCenter reported no objects of this kind. That can be correct — check the sheet's notes before treating it as a fault.";
+    }
     note.append(head, body2);
     wrap.append(note);
   }

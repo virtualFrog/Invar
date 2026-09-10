@@ -233,6 +233,8 @@ fn metadata_table(servers: &[String]) -> Table {
             })
             .collect(),
         warnings: Vec::new(),
+        // Always has one row per server, so it never reaches an empty state.
+        empty_note: None,
     }
 }
 
@@ -398,7 +400,7 @@ mod csv_tests {
     use crate::data::Column;
 
     fn table_with(columns: Vec<Column>, rows: Vec<Vec<Cell>>) -> Table {
-        Table { name: "vTest".into(), columns, rows, warnings: Vec::new() }
+        Table { name: "vTest".into(), columns, rows, warnings: Vec::new(), empty_note: None }
     }
 
     #[test]

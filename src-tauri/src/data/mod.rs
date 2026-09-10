@@ -6,6 +6,7 @@
 //! into ~24 per-table definitions.
 
 pub mod common;
+pub mod drift;
 pub mod dvport;
 pub mod dvswitch;
 pub mod hostnet;
@@ -74,6 +75,10 @@ pub const SHEETS: &[&SheetSpec] = &[
     &vfileinfo::SPEC,
     &vlicense::SPEC,
     &vhealth::SPEC,
+    // Not an RVTools sheet, so it sits after the 26 that are. `export.rs`
+    // appends anything absent from `RVTOOLS_SHEET_ORDER` rather than dropping
+    // it, so the workbook carries it too.
+    &drift::SPEC,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -143,6 +148,36 @@ pub struct Table {
     /// inventory tool.
     #[serde(default)]
     pub warnings: Vec<String>,
+    /// What zero rows means on this sheet, when it does not mean "no data".
+    /// `None` leaves the UI's generic wording in place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub empty_note: Option<String>,
+}
+
+/// What an empty sheet means, for the sheets where no rows is the *good*
+/// result.
+///
+/// Most sheets enumerate objects, so zero rows means the vCenter held none of
+/// them. A findings sheet inverts that: zero rows is a clean bill of health,
+/// and telling the reader "the vCenter reported no objects of this kind" turns
+/// a verified-healthy result into something that reads like a broken query.
+///
+/// Kept here beside [`SHEETS`] rather than as a `SheetSpec` field so that
+/// adding one does not mean editing all 26 existing specs — the same reason
+/// `VI SDK Server` is appended generically rather than restated per sheet.
+fn empty_note_for(sheet: &str) -> Option<&'static str> {
+    match sheet {
+        "Cluster Drift" => Some(
+            "No drift found. Every host agrees with the rest of its cluster on all \
+             the settings compared, which is the result you want. Clusters of one \
+             host, and settings no host reported, are not compared — see the sheet's \
+             notes.",
+        ),
+        "vHealth" => Some(
+            "No health findings. RVTools' checks all passed against this inventory.",
+        ),
+        _ => None,
+    }
 }
 
 /// The source-vCenter column RVTools puts on nearly every sheet. Appended
@@ -158,7 +193,13 @@ pub const FOLDER: &str = "Folder";
 
 impl Table {
     pub fn new(name: &str, columns: Vec<Column>) -> Self {
-        Self { name: name.into(), columns, rows: Vec::new(), warnings: Vec::new() }
+        Self {
+            name: name.into(),
+            columns,
+            rows: Vec::new(),
+            warnings: Vec::new(),
+            empty_note: empty_note_for(name).map(str::to_string),
+        }
     }
 
     /// Append rows from one vCenter, tagging each with its inventory location
