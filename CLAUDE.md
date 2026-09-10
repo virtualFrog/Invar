@@ -310,7 +310,26 @@ The reference implementation got these wrong; don't inherit them.
 - `npm run tauri build` — produce an installer. It only builds for the platform
   you're on; Windows/Linux installers need to be built on those platforms.
   Windows setup is written up in `docs/RUNNING-ON-WINDOWS.md`.
-- Adding a second binary (e.g. a web server) breaks `cargo run`, which
-  `tauri dev` uses internally. Fix with `default-run = "<app-name>"` in
-  `Cargo.toml`'s `[package]`.
+- `cargo run --bin invar-export -- --help` — the headless exporter. It shares
+  `config.json` with the desktop app, and `config::default_dir()` is how a
+  non-Tauri binary finds that directory without an `AppHandle`.
+- Adding a second binary breaks `cargo run`, which `tauri dev` uses internally.
+  Fixed by `default-run = "invar"` in `Cargo.toml`'s `[package]`, already set.
+- **A second binary also breaks `tauri build --target universal-apple-darwin`**,
+  and only that target. The bundler copies every binary in the package into the
+  `.app`, but its universal handling lipos only the *main* one, so it dies with
+  `Failed to copy binary from ".../universal-apple-darwin/release/invar-export"`.
+  Build both slices and `lipo` them into that directory *before* bundling; the
+  release workflow does this. Verified 2026-09-10: plain `tauri build` is
+  unaffected, because cargo has already put every binary in `target/release`.
+- **CI gates on `cargo clippy --all-targets -- -D warnings`.** Two lints are
+  allowed in `Cargo.toml`'s `[lints.clippy]` with reasons; don't add more
+  without one. `cargo fmt` is deliberately *not* enforced: the codebase predates
+  any rustfmt config and reformatting it would bury real changes in noise.
+- Releases come from `.github/workflows/release.yml` on a `v*` tag. macOS builds
+  are signed and notarized when the `APPLE_*` secrets are present, and produce
+  one universal `.dmg`. Windows code signing is not wired up. The whole
+  procedure, including where each secret comes from, is `docs/RELEASING.md`.
+  Three version fields have to agree: `tauri.conf.json`, `Cargo.toml`,
+  `package.json`.
 - Keep tests free of absolute machine-specific paths — write to `std::env::temp_dir()`.

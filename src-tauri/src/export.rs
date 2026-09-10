@@ -207,7 +207,13 @@ fn write_sheet(sheet: &mut Worksheet, table: &Table, f: &Formats) -> Result<(), 
 /// works, but the values name *this* tool — claiming to be an RVTools version
 /// would misstate where the data came from.
 fn write_metadata(sheet: &mut Worksheet, servers: &[String], f: &Formats) -> Result<(), String> {
-    let table = Table {
+    write_sheet(sheet, &metadata_table(servers), f)
+}
+
+/// The `vMetaData` rows, shared by the workbook and the CSV export so the two
+/// cannot drift.
+fn metadata_table(servers: &[String]) -> Table {
+    Table {
         name: "vMetaData".into(),
         columns: vec![
             crate::data::Column::text("RVTools major version"),
@@ -227,8 +233,7 @@ fn write_metadata(sheet: &mut Worksheet, servers: &[String], f: &Formats) -> Res
             })
             .collect(),
         warnings: Vec::new(),
-    };
-    write_sheet(sheet, &table, f)
+    }
 }
 
 /// Write every table to one workbook, in RVTools' sheet order.
@@ -266,4 +271,201 @@ pub fn default_filename() -> String {
         "RVTools_export_all_{}.xlsx",
         chrono::Local::now().format("%Y-%m-%d_%H.%M.%S")
     )
+}
+
+// ---- CSV ----
+//
+// RVTools writes one CSV per sheet alongside its workbook, and that is what
+// anything scripted actually consumes: an xlsx needs a library to read, a CSV
+// needs none. The cell rendering deliberately matches the workbook's, dates and
+// booleans included, so the two exports of one inventory do not disagree.
+
+/// Excel treats a leading `=`, `+`, `@`, tab or carriage return in a cell as
+/// the start of a formula. VM names, annotations and datastore paths are free
+/// text typed by whoever built the VM, so a CSV of vCenter inventory is an
+/// injection vector into whoever opens it.
+///
+/// Such a value is prefixed with an apostrophe, which Excel strips on display
+/// and which marks the cell as text. `-` is deliberately not in the list: it
+/// starts every negative number, and the false positives would be constant.
+fn defuse_formula(s: &str) -> std::borrow::Cow<'_, str> {
+    match s.chars().next() {
+        Some('=') | Some('+') | Some('@') | Some('\t') | Some('\r') => {
+            std::borrow::Cow::Owned(format!("'{s}"))
+        }
+        _ => std::borrow::Cow::Borrowed(s),
+    }
+}
+
+/// Quote one field per RFC 4180.
+fn csv_field(s: &str) -> String {
+    if s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
+/// Render one cell the way the workbook renders it.
+fn csv_cell(cell: &Cell, format: &ColumnFormat) -> String {
+    match cell {
+        Cell::Empty => String::new(),
+        Cell::Bool(b) => (if *b { "True" } else { "False" }).to_string(),
+        Cell::Number(n) => {
+            if n.fract() == 0.0 {
+                format!("{}", *n as i64)
+            } else {
+                format!("{n}")
+            }
+        }
+        Cell::Text(s) => match (format, parse_timestamp(s)) {
+            (ColumnFormat::Date, Some(dt)) => dt.format("%Y/%m/%d %H:%M:%S").to_string(),
+            _ => defuse_formula(s).into_owned(),
+        },
+    }
+}
+
+/// Render one table as CSV text, header row included.
+pub fn csv_of(table: &Table) -> String {
+    let formats: Vec<ColumnFormat> = (0..table.columns.len()).map(|i| column_format(table, i)).collect();
+
+    let mut out = String::new();
+    let header: Vec<String> = table.columns.iter().map(|c| csv_field(&c.label)).collect();
+    out.push_str(&header.join(","));
+    out.push_str("\r\n");
+
+    for row in &table.rows {
+        let fields: Vec<String> = row
+            .iter()
+            .enumerate()
+            .map(|(i, cell)| {
+                let fallback = ColumnFormat::Text;
+                csv_field(&csv_cell(cell, formats.get(i).unwrap_or(&fallback)))
+            })
+            .collect();
+        out.push_str(&fields.join(","));
+        out.push_str("\r\n");
+    }
+    out
+}
+
+/// Write every table into `dir`, one `<SheetName>.csv` per sheet.
+///
+/// Returns the files written. Sheet order follows the workbook's so a directory
+/// listing reads like the workbook's tabs.
+pub fn write_csv_dir(
+    tables: &[Table],
+    servers: &[String],
+    dir: &std::path::Path,
+) -> Result<Vec<std::path::PathBuf>, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("could not create {}: {e}", dir.display()))?;
+
+    let mut ordered: Vec<&Table> = Vec::new();
+    for name in RVTOOLS_SHEET_ORDER {
+        if let Some(t) = tables.iter().find(|t| &t.name == name) {
+            ordered.push(t);
+        }
+    }
+    for t in tables {
+        if !RVTOOLS_SHEET_ORDER.contains(&t.name.as_str()) {
+            ordered.push(t);
+        }
+    }
+
+    let mut written = Vec::new();
+    for table in ordered {
+        let path = dir.join(format!("{}.csv", table.name));
+        std::fs::write(&path, csv_of(table)).map_err(|e| format!("could not write {}: {e}", path.display()))?;
+        written.push(path);
+    }
+
+    let meta = metadata_table(servers);
+    let path = dir.join("vMetaData.csv");
+    std::fs::write(&path, csv_of(&meta)).map_err(|e| format!("could not write {}: {e}", path.display()))?;
+    written.push(path);
+
+    Ok(written)
+}
+
+/// Default directory name for a CSV export, alongside `default_filename`.
+pub fn default_csv_dirname() -> String {
+    default_filename().trim_end_matches(".xlsx").to_string()
+}
+
+#[cfg(test)]
+mod csv_tests {
+    use super::*;
+    use crate::data::Column;
+
+    fn table_with(columns: Vec<Column>, rows: Vec<Vec<Cell>>) -> Table {
+        Table { name: "vTest".into(), columns, rows, warnings: Vec::new() }
+    }
+
+    #[test]
+    fn quotes_only_what_needs_quoting() {
+        let t = table_with(
+            vec![Column::text("Name"), Column::text("Notes")],
+            vec![vec![Cell::Text("web-01".into()), Cell::Text("a, b".into())]],
+        );
+        let csv = csv_of(&t);
+        assert!(csv.contains("web-01,\"a, b\""), "{csv}");
+    }
+
+    #[test]
+    fn doubles_embedded_quotes() {
+        let t = table_with(
+            vec![Column::text("Annotation")],
+            vec![vec![Cell::Text("say \"hi\"".into())]],
+        );
+        assert!(csv_of(&t).contains("\"say \"\"hi\"\"\""));
+    }
+
+    #[test]
+    fn defuses_a_formula_in_a_vm_annotation() {
+        let t = table_with(
+            vec![Column::text("Annotation")],
+            vec![vec![Cell::Text("=cmd|'/c calc'!A1".into())]],
+        );
+        let csv = csv_of(&t);
+        assert!(csv.contains("'=cmd"), "formula was not defused: {csv}");
+    }
+
+    #[test]
+    fn leaves_a_negative_number_alone() {
+        let t = table_with(vec![Column::text("Delta")], vec![vec![Cell::Text("-5".into())]]);
+        assert!(csv_of(&t).contains("-5"));
+        assert!(!csv_of(&t).contains("'-5"));
+    }
+
+    #[test]
+    fn writes_booleans_as_rvtools_words() {
+        let t = table_with(vec![Column::bool("Template")], vec![vec![Cell::Bool(false)]]);
+        assert!(csv_of(&t).contains("False"));
+    }
+
+    #[test]
+    fn header_row_comes_first() {
+        let t = table_with(vec![Column::text("Name")], vec![vec![Cell::Text("vm".into())]]);
+        assert!(csv_of(&t).starts_with("Name\r\n"));
+    }
+
+    #[test]
+    fn empty_cells_are_empty_fields() {
+        let t = table_with(
+            vec![Column::text("A"), Column::text("B")],
+            vec![vec![Cell::Empty, Cell::Text("x".into())]],
+        );
+        assert!(csv_of(&t).contains("\r\n,x\r\n"));
+    }
+
+    #[test]
+    fn writes_one_file_per_sheet_plus_metadata() {
+        let dir = std::env::temp_dir().join(format!("invar-csv-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let t = table_with(vec![Column::text("Name")], vec![vec![Cell::Text("vm".into())]]);
+        let files = write_csv_dir(&[t], &["vc.example.com".into()], &dir).expect("csv export");
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().any(|p| p.ends_with("vMetaData.csv")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

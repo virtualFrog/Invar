@@ -596,6 +596,12 @@ dialog h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
 }
 .connection-result.bad { color: var(--danger); }
 
+.version {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--text-ghost);
+  text-align: center;
+}
 
 .dialog-actions { display: flex; gap: 8px; margin-top: 14px; align-items: center; }
 .spacer { flex: 1; }

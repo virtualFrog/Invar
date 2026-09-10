@@ -513,6 +513,21 @@ pub struct SheetSpec {
     pub rows: fn(&InventorySnapshot) -> Result<Vec<(String, Vec<Cell>)>, String>,
 }
 
+/// Where a fetch has got to, for a UI that would otherwise show nothing for
+/// minutes.
+///
+/// Granularity is one step per vCenter per stage rather than per sheet: the
+/// sheets are pure functions over a snapshot that is already in memory, so
+/// they take no measurable time. The waiting is all in the inventory walk, and
+/// that is what this reports.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Progress {
+    /// Text fit to put straight on screen.
+    pub stage: String,
+    pub done: usize,
+    pub total: usize,
+}
+
 /// Build every sheet in `specs` from one snapshot per vCenter.
 ///
 /// Never fails as a whole. A vCenter that cannot be reached contributes a
@@ -523,6 +538,16 @@ pub async fn fetch_tables(
     specs: &[&SheetSpec],
     conns: &[VCenterConnection],
     cache: &SessionCache,
+) -> Vec<Table> {
+    fetch_tables_with_progress(specs, conns, cache, &|_| {}).await
+}
+
+/// [`fetch_tables`], reporting progress as it goes.
+pub async fn fetch_tables_with_progress(
+    specs: &[&SheetSpec],
+    conns: &[VCenterConnection],
+    cache: &SessionCache,
+    progress: &(dyn Fn(Progress) + Sync),
 ) -> Vec<Table> {
     let vm_sets: Vec<&[&'static str]> =
         specs.iter().flat_map(|s| s.vm_props.iter().copied()).collect();
@@ -558,11 +583,20 @@ pub async fn fetch_tables(
         })
         .collect();
 
-    for conn in conns {
+    // Two steps per vCenter: reaching it, then walking it. Both can be slow,
+    // and an operator watching a spinner wants to know which one is stuck.
+    let total = conns.len() * 2;
+    for (i, conn) in conns.iter().enumerate() {
         let label = conn.label();
 
+        progress(Progress { stage: format!("Connecting to {label}"), done: i * 2, total });
         let snapshot = match cache.get(conn).await {
             Ok(session) => {
+                progress(Progress {
+                    stage: format!("Reading inventory from {label}"),
+                    done: i * 2 + 1,
+                    total,
+                });
                 InventorySnapshot::fetch(
                     &session,
                     &label,
@@ -607,6 +641,7 @@ pub async fn fetch_tables(
                 }
             }
         }
+        progress(Progress { stage: format!("Finished {label}"), done: (i + 1) * 2, total });
     }
 
     tables

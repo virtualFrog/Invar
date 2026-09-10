@@ -57,6 +57,13 @@ async fn test_connection(mut conn: VCenterConnection, state: tauri::State<'_, Ap
     Ok(full_name)
 }
 
+/// What the UI puts in its footer. A bug report that names a version is worth
+/// several that do not.
+#[tauri::command]
+fn app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 /// Where settings live, and whether secrets can be stored at all.
 ///
 /// The settings dialog says so plainly rather than letting a save fail with a
@@ -105,7 +112,12 @@ async fn fetch_sheet(sheet: String, state: tauri::State<'_, AppState>) -> Result
 ///
 /// Every sheet is built from one snapshot per vCenter, so the cost is one
 /// inventory walk per object type rather than one per sheet.
-async fn fetch_all_tables(state: &AppState) -> Result<(Vec<Table>, Vec<String>), String> {
+async fn fetch_all_tables(
+    state: &AppState,
+    app: &tauri::AppHandle,
+) -> Result<(Vec<Table>, Vec<String>), String> {
+    use tauri::Emitter;
+
     let conns = state.connections()?;
     if conns.is_empty() {
         return Err("No vCenter connections configured. Add one in Settings.".into());
@@ -122,8 +134,47 @@ async fn fetch_all_tables(state: &AppState) -> Result<(Vec<Table>, Vec<String>),
     // opens it, having chosen to wait.
     let sheets: Vec<&data::snapshot::SheetSpec> =
         data::SHEETS.iter().copied().filter(|s| !s.wants_files).collect();
-    let tables = data::snapshot::fetch_tables(&sheets, &conns, &state.cache).await;
+    // An export of a real estate takes minutes. Reporting which vCenter is
+    // being read, rather than nothing at all, is the difference between a slow
+    // operation and one that looks hung.
+    let handle = app.clone();
+    let tables = data::snapshot::fetch_tables_with_progress(&sheets, &conns, &state.cache, &move |p| {
+        let _ = handle.emit("export-progress", p);
+    })
+    .await;
     Ok((tables, servers))
+}
+
+/// Ask where to put an export, before spending minutes producing one.
+///
+/// The dialog blocks until the user answers, so it cannot run on the async
+/// runtime's thread. `None` means the dialog was dismissed.
+async fn ask_for_path(
+    app: &tauri::AppHandle,
+    title: &str,
+    filename: String,
+    filter: (&str, &[&str]),
+) -> Result<Option<std::path::PathBuf>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let (filter_name, extensions) = filter;
+    let dialog = app
+        .dialog()
+        .file()
+        .set_title(title)
+        .set_file_name(filename)
+        .add_filter(filter_name, extensions);
+    let chosen = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
+        .await
+        .map_err(|e| format!("save dialog failed: {e}"))?;
+
+    match chosen {
+        None => Ok(None),
+        Some(p) => p
+            .into_path()
+            .map(Some)
+            .map_err(|e| format!("could not resolve the chosen path: {e}")),
+    }
 }
 
 /// What an export produced, for the UI to report.
@@ -148,30 +199,25 @@ async fn fetch_insights(
     Ok(data::insights::fetch_insights_all(&conns, &state.cache).await)
 }
 
+/// Export every sheet to one .xlsx workbook.
+///
+/// The save dialog comes *first*. It used to come after the fetch, which meant
+/// several minutes of apparently nothing followed by a question the user could
+/// still answer "cancel" to, throwing the whole fetch away.
 #[tauri::command]
 async fn export_xlsx(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<ExportResult, String> {
-    use tauri_plugin_dialog::DialogExt;
-
-    let (tables, servers) = fetch_all_tables(&state).await?;
-
-    let dialog = app
-        .dialog()
-        .file()
-        .set_title("Export inventory")
-        .set_file_name(export::default_filename())
-        .add_filter("Excel workbook", &["xlsx"]);
-    // The dialog blocks until the user answers, so it must not run on the
-    // async runtime's thread.
-    let chosen = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
-        .await
-        .map_err(|e| format!("save dialog failed: {e}"))?;
-
-    let Some(path) = chosen else {
+    let Some(path) = ask_for_path(
+        &app,
+        "Export inventory",
+        export::default_filename(),
+        ("Excel workbook", &["xlsx"]),
+    )
+    .await?
+    else {
         return Ok(ExportResult { path: None, sheets: 0, rows: 0, warnings: Vec::new() });
     };
-    let path = path
-        .into_path()
-        .map_err(|e| format!("could not resolve the chosen path: {e}"))?;
+
+    let (tables, servers) = fetch_all_tables(&state, &app).await?;
 
     let rows = tables.iter().map(|t| t.rows.len()).sum();
     let warnings = tables.iter().flat_map(|t| t.warnings.clone()).collect();
@@ -182,6 +228,42 @@ async fn export_xlsx(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -
     Ok(ExportResult {
         path: Some(path.display().to_string()),
         sheets,
+        rows,
+        warnings,
+    })
+}
+
+/// Export every sheet as one CSV file per sheet, into a directory.
+///
+/// A directory rather than a single file because RVTools' CSV export is
+/// per-sheet, and because 27 sheets do not fit one flat CSV without inventing a
+/// shape nothing else reads.
+#[tauri::command]
+async fn export_csv(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<ExportResult, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let dialog = app.dialog().file().set_title("Choose a folder for the CSV files");
+    let chosen = tauri::async_runtime::spawn_blocking(move || dialog.blocking_pick_folder())
+        .await
+        .map_err(|e| format!("folder dialog failed: {e}"))?;
+    let Some(parent) = chosen else {
+        return Ok(ExportResult { path: None, sheets: 0, rows: 0, warnings: Vec::new() });
+    };
+    let parent = parent
+        .into_path()
+        .map_err(|e| format!("could not resolve the chosen folder: {e}"))?;
+    let dir = parent.join(export::default_csv_dirname());
+
+    let (tables, servers) = fetch_all_tables(&state, &app).await?;
+
+    let rows = tables.iter().map(|t| t.rows.len()).sum();
+    let warnings = tables.iter().flat_map(|t| t.warnings.clone()).collect();
+
+    let files = export::write_csv_dir(&tables, &servers, &dir)?;
+
+    Ok(ExportResult {
+        path: Some(dir.display().to_string()),
+        sheets: files.len(),
         rows,
         warnings,
     })
@@ -202,30 +284,24 @@ async fn export_topology_report(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
 ) -> Result<ReportResult, String> {
-    use tauri_plugin_dialog::DialogExt;
-
     let conns = state.connections()?;
     if conns.is_empty() {
         return Err("No vCenter connections configured. Add one in Settings.".into());
     }
-    let topology = data::topology::fetch_topology_all(&conns, &state.cache).await;
 
-    let dialog = app
-        .dialog()
-        .file()
-        .set_title("Save topology report")
-        .set_file_name(report::default_filename())
-        .add_filter("HTML report", &["html"]);
-    let chosen = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
-        .await
-        .map_err(|e| format!("save dialog failed: {e}"))?;
-
-    let Some(path) = chosen else {
+    // Ask before fetching, for the same reason the workbook export does.
+    let Some(path) = ask_for_path(
+        &app,
+        "Save topology report",
+        report::default_filename(),
+        ("HTML report", &["html"]),
+    )
+    .await?
+    else {
         return Ok(ReportResult { path: None, hosts: 0, datastores: 0, warnings: Vec::new() });
     };
-    let path = path
-        .into_path()
-        .map_err(|e| format!("could not resolve the chosen path: {e}"))?;
+
+    let topology = data::topology::fetch_topology_all(&conns, &state.cache).await;
 
     let hosts = topology.servers.iter().map(|s| s.all_hosts().len()).sum();
     let datastores = topology.servers.iter().map(|s| s.datastores.len()).sum();
@@ -264,11 +340,13 @@ pub fn run() {
             get_config,
             save_config,
             test_connection,
+            app_version,
             storage_info,
             list_sheets,
             fetch_sheet,
             fetch_insights,
             export_xlsx,
+            export_csv,
             export_topology_report
         ])
         .build(tauri::generate_context!())

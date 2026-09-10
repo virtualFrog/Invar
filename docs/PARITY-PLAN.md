@@ -523,36 +523,67 @@ RVTools behaviour that this unlocks and which is still unimplemented.
 
 ### Phase 6: app-level parity
 
-Sheets are not the whole product. RVTools also does these, and Invar does none
-of them:
+Sheets are not the whole product. RVTools also does these.
 
-- **Headless export.** RVTools' `-c ExportAll2xls` is how people schedule it. This
-  is also the README's stated Linux-service goal. Needs a second binary; note
-  `CLAUDE.md` already records that this breaks `cargo run` under `tauri dev`
-  unless `default-run` is set, which it now is (`invar`).
-- **CSV export** per sheet, alongside xlsx.
+**Landed 2026-09-10:**
+
+- **Headless export.** `invar-export`, a second binary sharing the desktop app's
+  `config.json`. `--xlsx`, `--csv`, `--sheets`, `--include-file-info`, and an
+  exit status that distinguishes a clean run from one that was written but is
+  short of a vCenter. `default-run = "invar"` keeps `tauri dev` working.
+- **CSV export** per sheet, in the GUI and the CLI, sharing the workbook's cell
+  rendering so the two exports of one inventory cannot disagree. Formula-leading
+  cells are defused: VM annotations are free text, and a CSV of them is an
+  injection vector into whoever opens it in Excel.
+- **Grid search, filter and column sort** in the UI. This was listed as missing
+  and had in fact been built (`src/main.js`, `sortedRows` / `filteredRows`);
+  the entry was stale rather than the feature absent.
+
+**Still open:**
+
+- **Connect straight to a standalone ESXi host**, not only to vCenter. Needs a
+  live ESXi host to verify against: the REST session endpoint the app logs in
+  through is a vCenter endpoint, and what an ESXi host offers instead has not
+  been checked here.
+- **Custom attributes and vSphere tags** as columns. Custom attributes come off
+  `availableField` / `customValue`; tags need the REST tagging API and a
+  per-object association lookup. Neither property path has been queried live, so
+  neither may be written yet (ground rule 1).
+- **vHealth's `Zombie` check.** The evidence for how RVTools does it is in
+  `reference/RVTools_export_all_2024-08-18_15.54.15.xlsx`: that export has
+  `vFileInfo` switched off entirely, one row reading "This tab page is empty
+  when GetFileInfo option is not set", and **still reports 6 Zombie rows**. So
+  the check is not driven by the full datastore walk. All six name files inside
+  VM folders (`[NFS-01-500] WIN-19-181/Cloud_Volume_E.vmdk`), which points at a
+  per-VM-folder search rather than a per-datastore one, bounded by VM count
+  instead of datastore size. `SoapClient::search_datastore` already takes an
+  arbitrary `datastorePath`, so no new request shape is needed. It still wants a
+  live run before it ships: a false "Zombie" claim about a real VMDK is worse
+  than a missing check, and linked clones, first-class disks under `fcd/` and
+  VMs registered on another vCenter are all plausible false positives.
 - **Email delivery** of a finished export over SMTP.
 - **Zip and password-protect** the export.
-- **Grid search, filter and column sort** in the UI.
-- **Connect straight to a standalone ESXi host**, not only to vCenter.
-- **Custom attributes and vSphere tags** as columns.
 
 ---
 
 ## 4. Security work to carry alongside
 
-Both of these are already named as inherited defects in `CLAUDE.md`; they should
-land with the phases, not after.
+Both were named as inherited defects in `CLAUDE.md`.
 
-1. **Stored vCenter passwords are cleartext.** `config.json` holds them as plain
-   strings. `restrict_permissions` chmods the file to `0600`, but only on Unix:
-   the `#[cfg(not(unix))]` arm is an empty function
-   (`src-tauri/src/vcenter/config.rs:82`), so on Windows, a first-class target
-   here, the file gets default ACLs. RVTools encrypts its stored passwords. Move
-   to the OS credential store (Keychain, DPAPI, libsecret).
+1. **Stored vCenter passwords are cleartext. Fixed 2026-09-10.** They now go to
+   the OS credential store (`src-tauri/src/vcenter/secrets.rs`): Keychain,
+   Credential Manager, Secret Service. `config.json` holds hosts, usernames and
+   the certificate policy only, `password` is `skip_serializing` so it reaches
+   neither the file nor the webview, and an old file's cleartext passwords are
+   migrated on first read. Headless machines with no credential store use
+   `INVAR_PASSWORD_<n>`.
 2. **If the Linux web-service mode in Phase 6 happens, authenticate it.** The
    reference implementation bound `0.0.0.0` with no auth and an endpoint that
    returned stored vCenter credentials in cleartext. Do not inherit that.
+3. **Certificate verification was off with no way to turn it on. Fixed
+   2026-09-10.** `src/main.js` hardcoded `skip_cert_verify: true` on every saved
+   connection, so every connection the app ever made was open to interception.
+   It now defaults to false and is a per-connection checkbox.
 
 ---
 

@@ -523,13 +523,36 @@ async function loadSheet() {
 
 // ---- export ----
 
-async function exportXlsx() {
-  const button = el("export");
-  button.disabled = true;
+// The backend asks where to save before it fetches anything, then reports which
+// vCenter it is reading. An export of a real estate takes minutes, and a window
+// that shows nothing for that long is indistinguishable from a hung one.
+//
+// Optional-chained rather than called straight: this runs at module scope, and
+// a progress nicety must not be able to take the whole UI down with it if the
+// event API is ever absent.
+window.__TAURI__?.event
+  ?.listen("export-progress", (event) => {
+    const p = event.payload;
+    setStatus(`${p.stage} (${p.done}/${p.total})`);
+  })
+  ?.catch(() => {});
+
+/** Every button that starts a long fetch, so one run disables all of them. */
+const EXPORT_BUTTONS = ["export", "export-csv", "report"];
+
+/**
+ * Shared shape of the export buttons: disable, run, report, re-enable.
+ *
+ * @param {string} command  backend command to invoke
+ * @param {(r: object) => string} describe  success line for the status bar
+ */
+async function runExport(command, describe) {
+  const buttons = EXPORT_BUTTONS.map(el);
+  buttons.forEach((b) => (b.disabled = true));
   const previous = el("status").textContent;
-  setStatus("Collecting every sheet for export…");
+  setStatus("Waiting for a destination…");
   try {
-    const result = await invoke("export_xlsx");
+    const result = await invoke(command);
     if (!result.path) {
       setStatus(previous);
       return;
@@ -537,36 +560,35 @@ async function exportXlsx() {
     // Warnings ride along with the export: a workbook missing a vCenter's rows
     // must say so, not just report a row count.
     renderWarnings(result.warnings);
-    const sheets = `${result.sheets} sheet${result.sheets === 1 ? "" : "s"}`;
-    setStatus(`Exported ${sheets}, ${result.rows.toLocaleString()} rows → ${result.path}`);
+    setStatus(describe(result));
   } catch (e) {
     setStatus(String(e));
   } finally {
-    button.disabled = false;
+    buttons.forEach((b) => (b.disabled = false));
   }
 }
 
-/// Host + storage topology as a standalone HTML file.
+async function exportXlsx() {
+  await runExport("export_xlsx", (r) => {
+    const sheets = `${r.sheets} sheet${r.sheets === 1 ? "" : "s"}`;
+    return `Exported ${sheets}, ${r.rows.toLocaleString()} rows to ${r.path}`;
+  });
+}
+
+async function exportCsv() {
+  await runExport("export_csv", (r) => {
+    const files = `${r.sheets} file${r.sheets === 1 ? "" : "s"}`;
+    return `Exported ${files}, ${r.rows.toLocaleString()} rows to ${r.path}`;
+  });
+}
+
+/** Host and storage topology as a standalone HTML file. */
 async function exportReport() {
-  const button = el("report");
-  button.disabled = true;
-  const previous = el("status").textContent;
-  setStatus("Building the topology report…");
-  try {
-    const result = await invoke("export_topology_report");
-    if (!result.path) {
-      setStatus(previous);
-      return;
-    }
-    renderWarnings(result.warnings);
-    const hosts = `${result.hosts} host${result.hosts === 1 ? "" : "s"}`;
-    const stores = `${result.datastores} datastore${result.datastores === 1 ? "" : "s"}`;
-    setStatus(`Topology report: ${hosts}, ${stores} → ${result.path}`);
-  } catch (e) {
-    setStatus(String(e));
-  } finally {
-    button.disabled = false;
-  }
+  await runExport("export_topology_report", (r) => {
+    const hosts = `${r.hosts} host${r.hosts === 1 ? "" : "s"}`;
+    const stores = `${r.datastores} datastore${r.datastores === 1 ? "" : "s"}`;
+    return `Topology report: ${hosts}, ${stores} to ${r.path}`;
+  });
 }
 
 // ---- settings ----
@@ -727,6 +749,7 @@ async function saveSettings() {
 el("refresh").addEventListener("click", loadSheet);
 el("filter").addEventListener("input", renderBody);
 el("export").addEventListener("click", exportXlsx);
+el("export-csv").addEventListener("click", exportCsv);
 el("report").addEventListener("click", exportReport);
 el("open-settings").addEventListener("click", openSettings);
 el("add-connection").addEventListener("click", () => el("connections").append(connectionRow()));
@@ -736,9 +759,13 @@ el("save-settings").addEventListener("click", saveSettings);
   sheets = await invoke("list_sheets").catch(() => ["vInfo"]);
   el("sheet-title").textContent = currentSheet;
   renderNav();
+  // A bug report that names a version is worth several that do not.
+  invoke("app_version")
+    .then((v) => (el("app-version").textContent = `Invar ${v}`))
+    .catch(() => {});
   const cfg = await invoke("get_config").catch(() => ({ connections: [] }));
   if (cfg.connections.length === 0) {
-    setStatus("No vCenter configured yet — open Settings to add one.");
+    setStatus("No vCenter configured yet. Open Settings to add one.");
     return;
   }
   await loadSheet();
