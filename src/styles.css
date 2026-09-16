@@ -20,6 +20,7 @@
  */
 
 :root {
+  color-scheme: dark;
   /* Graphite, deliberately neutral — no blue cast competing with status. */
   --app-bg: #16181a;
   --sidebar-bg: #101214;
@@ -43,6 +44,8 @@
   --accent: #4fb3a5;
   --accent-hover: #6fcabd;
   --accent-dim: #24443f;
+  /* Text set on an accent fill. */
+  --on-accent: #0d1416;
 
   /* Reserved strictly for state. Never decoration. */
   --success: #6fbf5e;
@@ -57,6 +60,70 @@
   /* Cascadia ships with Windows Terminal; Consolas is always there. */
   --mono: ui-monospace, "Cascadia Mono", "Cascadia Code", Consolas,
     "SF Mono", "Menlo", monospace;
+}
+
+/* Light: the same neutral brief on paper instead of graphite. The accent and
+ * state colours are darkened rather than reused, so they keep their contrast
+ * on a white surface. theme.js sets data-theme when the user picks one; with
+ * no choice, the operating system's preference decides. The palette is stated
+ * twice because a media query and an attribute selector cannot share a rule. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --app-bg: #f5f6f7;
+  --sidebar-bg: #eceef0;
+  --surface: #ffffff;
+  --surface-alt: #f1f3f4;
+  --row-alt: #f7f8f9;
+  --row-hover: #e6eaed;
+  --row-selected: #dbeeeb;
+
+  --border: #d8dde1;
+  --border-strong: #b9c1c7;
+  --hairline: #e5e8eb;
+
+  --text: #1a1e21;
+  --text-dim: #4b555c;
+  --text-faint: #6c777f;
+  --text-ghost: #a2abb1;
+
+  --accent: #1d8274;
+  --accent-hover: #166a5e;
+  --accent-dim: #d4ece8;
+  --on-accent: #ffffff;
+
+  --success: #3b8a2c;
+  --warning: #a36a0a;
+  --danger: #c2382e;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --app-bg: #f5f6f7;
+    --sidebar-bg: #eceef0;
+    --surface: #ffffff;
+    --surface-alt: #f1f3f4;
+    --row-alt: #f7f8f9;
+    --row-hover: #e6eaed;
+    --row-selected: #dbeeeb;
+
+    --border: #d8dde1;
+    --border-strong: #b9c1c7;
+    --hairline: #e5e8eb;
+
+    --text: #1a1e21;
+    --text-dim: #4b555c;
+    --text-faint: #6c777f;
+    --text-ghost: #a2abb1;
+
+    --accent: #1d8274;
+    --accent-hover: #166a5e;
+    --accent-dim: #d4ece8;
+    --on-accent: #ffffff;
+
+    --success: #3b8a2c;
+    --warning: #a36a0a;
+    --danger: #c2382e;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -168,6 +235,32 @@ body {
 }
 .sidebar-footer button { width: 100%; }
 
+/* Appearance switch: three segments, the chosen one filled. */
+.theme-switch {
+  display: flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+.sidebar-footer .theme-switch button {
+  flex: 1;
+  width: auto;
+  padding: 3px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.sidebar-footer .theme-switch button + button { border-left: 1px solid var(--border-strong); }
+.sidebar-footer .theme-switch button:hover { color: var(--text); }
+.sidebar-footer .theme-switch button[aria-pressed="true"] {
+  background: var(--row-selected);
+  color: var(--text);
+  font-weight: 600;
+}
+
 /* ---------------------------------------------------------------- buttons */
 
 button {
@@ -183,7 +276,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 .primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #0d1416;
+  color: var(--on-accent);
   font-weight: 600;
 }
 .primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
@@ -440,9 +533,9 @@ td.empty::after {
 .stat .v { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
 
 .bars { display: flex; flex-direction: column; gap: 8px; }
-.bar-row { display: grid; grid-template-columns: 1fr 74px; gap: 8px; align-items: center; }
+.bar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 .bar-name { font-size: 11.5px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bar-val { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-faint); text-align: right; }
+.bar-val { font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-faint); text-align: right; white-space: nowrap; }
 .bar-track { grid-column: 1 / -1; height: 4px; background: var(--hairline); border-radius: 2px; overflow: hidden; }
 .bar-fill { height: 100%; background: var(--accent); }
 .bar-fill.warn { background: var(--warning); }
@@ -464,6 +557,7 @@ td.empty::after {
   border-bottom: 1px solid var(--hairline);
   font-size: 12px;
 }
+.mini-table th.num { text-align: right; }
 .mini-table td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
 .mini-table tr:last-child td { border-bottom: 0; }
 
@@ -541,7 +635,7 @@ dialog {
   min-width: 500px;
   max-width: 90vw;
 }
-dialog::backdrop { background: rgb(0 0 0 / 0.6); }
+dialog::backdrop { background: rgb(0 0 0 / 0.45); }
 dialog h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
 
 .hint { margin: 0 0 14px; font-size: 11.5px; color: var(--text-faint); line-height: 1.5; }

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Invar</title>
     <link rel="stylesheet" href="styles.css" />
+    <script src="theme.js"></script>
   </head>
   <body>
     <div class="app">
@@ -33,6 +34,11 @@
           <button id="export-csv" class="ghost">Export CSV</button>
           <button id="report" class="ghost">Topology Report</button>
           <button id="open-settings" class="ghost">Settings</button>
+          <div id="theme-switch" class="theme-switch" role="group" aria-label="Appearance">
+            <button type="button" value="system" title="Follow the operating system">System</button>
+            <button type="button" value="light">Light</button>
+            <button type="button" value="dark">Dark</button>
+          </div>
           <p id="app-version" class="version"></p>
         </div>
       </aside>

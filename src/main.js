@@ -643,6 +643,7 @@ function connectionRow(conn = BLANK_CONNECTION) {
 
   const remove = document.createElement("button");
   remove.type = "button";
+  remove.className = "ghost";
   remove.textContent = "Remove";
   remove.addEventListener("click", () => wrap.remove());
 
