@@ -28,6 +28,41 @@ vMultiPath, vFileInfo, vLicense, vHealth and vMetaData.
 Alongside the tables it produces an HTML topology report, and a dashboard
 summarising capacity and utilisation across every configured vCenter.
 
+## Screenshots
+
+The app has a light and a dark theme, and follows the operating system unless
+you pick one with the System / Light / Dark switch in the sidebar. These images
+follow your GitHub theme the same way.
+
+**Environment Overview**: capacity and utilisation across every configured vCenter.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/overview-dark.png">
+  <img alt="Environment Overview dashboard" src="docs/screenshots/overview-light.png">
+</picture>
+
+**vInfo**: one sortable, filterable table per RVTools sheet. The hairline under
+each column header shows how much of that column vCenter actually populated.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/vinfo-dark.png">
+  <img alt="vInfo sheet" src="docs/screenshots/vinfo-light.png">
+</picture>
+
+**vHealth**: RVTools' health checks, computed from the inventory already read.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/vhealth-dark.png">
+  <img alt="vHealth sheet" src="docs/screenshots/vhealth-light.png">
+</picture>
+
+**Settings**: several vCenters at once, with passwords kept in the OS credential store.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/settings-dark.png">
+  <img alt="vCenter connections dialog" src="docs/screenshots/settings-light.png">
+</picture>
+
 ## Install
 
 Download the build for your platform from the
